@@ -48,8 +48,8 @@ var Label = map[string]string{
 	StCI:     "🍬 Production Line",
 	StFix:    "🍬 Production Line",
 	StReview: "🔍 Quality Control",
-	StRoute:  "🎟️  Golden Ticket",
-	StGate:   "🎟️  Golden Ticket",
+	StRoute:  "🎫 Golden Ticket",
+	StGate:   "🎫 Golden Ticket",
 	StMerge:  "✨ Delivery",
 	StDone:   "✨ Delivery",
 }
