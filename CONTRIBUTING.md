@@ -73,3 +73,21 @@ Then:
    `DetectRateLimit` with a test.
 5. Make sure read-only mode really can't write, and that write mode can't run
    `git commit`/`push` or `gh`.
+
+## Releasing
+
+Push a version tag; the `release` workflow does the rest with
+[GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`):
+
+```sh
+git tag -a v0.2.0 -m v0.2.0 && git push origin v0.2.0
+```
+
+It builds macOS and Linux binaries (amd64, arm64), publishes the GitHub release
+that `install.sh` downloads from, and updates the cask in
+[vianel/homebrew-tap](https://github.com/vianel/homebrew-tap). That last step
+needs the `HOMEBREW_TAP_TOKEN` secret: a fine-grained token with Contents
+read/write on the tap repo.
+
+If a release fails halfway, delete it (`gh release delete vX.Y.Z --yes`; the tag
+stays) before re-running the job, or the uploads fail with "already exists".

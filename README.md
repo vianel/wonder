@@ -1,5 +1,9 @@
 # 🎩 wonder
 
+[![release](https://img.shields.io/github/v/release/vianel/wonder)](https://github.com/vianel/wonder/releases/latest)
+[![ci](https://github.com/vianel/wonder/actions/workflows/ci.yml/badge.svg)](https://github.com/vianel/wonder/actions/workflows/ci.yml)
+[![license](https://img.shields.io/github/license/vianel/wonder)](LICENSE)
+
 ```
                          .-""-.
         ~~~ steam ~~~   / 🎩   \        W O N D E R W O R K S
@@ -87,7 +91,9 @@ go install github.com/vianel/wonder/cmd/wonder@latest
 ```
 
 The script puts `wonder` in `~/.local/bin` (set `WONDER_INSTALL_DIR` to change
-that) and checks the download against the release checksums.
+that) and checks the download against the release checksums. To upgrade, run
+`brew upgrade wonder` or the same `curl` line again; `wonder --version` shows
+what you have.
 
 Missing something? `wonder doctor --fix` offers to install `gh`, `claude`, `codex`
 and `herdr` for you, one at a time. It shows the exact command and does nothing
