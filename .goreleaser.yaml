@@ -1,0 +1,29 @@
+version: 2
+project_name: wonder
+builds:
+  - main: ./cmd/wonder
+    env: [CGO_ENABLED=0]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    ldflags: -s -w -X main.version={{.Version}}
+archives:
+  # No version in the name, so install.sh can use releases/latest/download.
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+checksum:
+  name_template: checksums.txt
+homebrew_casks:
+  - repository:
+      owner: vianel
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/vianel/wonder
+    description: Turns GitHub issues into reviewed, merged PRs with coding agents
+    license: MIT
+    hooks:
+      post:
+        # The binary is not notarized; let macOS run it.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/wonder"]
+          end

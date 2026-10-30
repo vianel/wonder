@@ -76,10 +76,18 @@ You need:
 - optional: [herdr](https://herdr.dev), to watch each worker in its own pane
 
 ```sh
+# macOS (Homebrew)
+brew install vianel/tap/wonder
+
+# macOS or Linux
+curl -fsSL https://raw.githubusercontent.com/vianel/wonder/main/install.sh | sh
+
+# from source (Go 1.23+)
 go install github.com/vianel/wonder/cmd/wonder@latest
-# make sure ~/go/bin is on your PATH:
-echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
+
+The script puts `wonder` in `~/.local/bin` (set `WONDER_INSTALL_DIR` to change
+that) and checks the download against the release checksums.
 
 Missing something? `wonder doctor --fix` offers to install `gh`, `claude`, `codex`
 and `herdr` for you, one at a time. It shows the exact command and does nothing
