@@ -42,6 +42,10 @@ not answered yet), `paused_rate_limit`, `blocked` and `failed`.
   don't go back through review, so they say nothing about the reviewers.
 - `rules_route` is where the router rules alone would send the PR, ignoring
   `allow_auto`. `stats` and `replay --station router` score it against the gate.
+- `usage` maps each station key (`spec`, `build`, `fix`, `review.codex`, …) to
+  `{calls, seconds, input_tokens, cached_input_tokens, output_tokens, cost_usd,
+  unpriced_tokens}` up to the first gate verdict. Dollars are API-equivalent.
+  Run state has the same map for the whole run.
 - `prompts` holds the first 8 hex digits of the SHA-256 of each prompt template.
   A model left unset is recorded as `<worker>:default`.
 - With `wonder init --commit-verdicts`, the log is kept in git. It contains gate

@@ -21,6 +21,20 @@ type Config struct {
 	Router   Router   `toml:"router"`
 	Stations Stations `toml:"stations"`
 	Eval     Eval     `toml:"eval"`
+	// Pricing gives dollar figures to workers whose CLI reports tokens only
+	// (codex). Keyed by worker name; USD per million tokens.
+	Pricing map[string]Price `toml:"pricing"`
+}
+
+type Price struct {
+	Input       float64 `toml:"input"`
+	CachedInput float64 `toml:"cached_input"`
+	Output      float64 `toml:"output"`
+}
+
+// Cost prices token counts.
+func (p Price) Cost(input, cached, output int64) float64 {
+	return (float64(input)*p.Input + float64(cached)*p.CachedInput + float64(output)*p.Output) / 1e6
 }
 
 type Factory struct {
@@ -141,6 +155,14 @@ func (c *Config) Validate() error {
 	}
 	for i, w := range c.Stations.Review.Workers {
 		check(fmt.Sprintf("stations.review.workers[%d]", i), w)
+	}
+	for w, p := range c.Pricing {
+		if !knownWorkers[w] {
+			errs = append(errs, fmt.Sprintf("pricing.%s: unknown worker", w))
+		}
+		if p.Input < 0 || p.CachedInput < 0 || p.Output < 0 {
+			errs = append(errs, fmt.Sprintf("pricing.%s: prices can't be negative", w))
+		}
 	}
 	if c.Stations.Fix.MaxAttempts < 1 {
 		errs = append(errs, "stations.fix.max_attempts must be >= 1")

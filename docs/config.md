@@ -46,6 +46,23 @@ model = "sonnet"
 prompt = ".wonder/prompts/judges/miss.md"
 ```
 
+## Cost
+
+wonder records tokens, dollars and agent time for every call (see
+`wonder status`, the golden-ticket card and `wonder stats`). Claude Code reports
+its cost itself, at API prices, also on a subscription where nothing is billed
+per call. Codex reports tokens only; to see dollars for it, add your prices
+(USD per million tokens) — wonder ships none, because prices change:
+
+```toml
+[pricing.codex]
+input = 1.25
+cached_input = 0.125
+output = 10.0
+```
+
+Without it, Codex shows as "unpriced tokens".
+
 Prompt paths are relative to the repo root. If a prompt file is missing, wonder
 falls back to the built-in default with the same name.
 

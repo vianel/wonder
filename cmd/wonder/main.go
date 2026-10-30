@@ -279,7 +279,7 @@ func statusCmd() *cobra.Command {
 				return nil
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(tw, "ISSUE\tSTATION\tSTATUS\tPR\tUPDATED\tNOTE")
+			fmt.Fprintln(tw, "ISSUE\tSTATION\tSTATUS\tPR\tCOST\tUPDATED\tNOTE")
 			for _, r := range runs {
 				pr := "—"
 				if r.PR != 0 {
@@ -292,7 +292,7 @@ func statusCmd() *cobra.Command {
 				if len(note) > 70 {
 					note = note[:70] + "…"
 				}
-				fmt.Fprintf(tw, "#%d\t%s\t%s\t%s\t%s\t%s\n", r.Issue, pipeline.Label[r.Station], r.Status, pr, r.Updated.Local().Format(time.DateTime), note)
+				fmt.Fprintf(tw, "#%d\t%s\t%s\t%s\t%s\t%s\t%s\n", r.Issue, pipeline.Label[r.Station], r.Status, pr, store.TotalUsage(r.Usage).Short(), r.Updated.Local().Format(time.DateTime), note)
 			}
 			return tw.Flush()
 		},

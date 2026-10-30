@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -79,6 +80,60 @@ type Route struct {
 	RulesRoute string `json:"rules_route"`
 }
 
+// Usage is what the agents of one station consumed, summed over its calls.
+// Dollars are API-equivalent: on a subscription nothing is billed per call.
+type Usage struct {
+	Calls          int     `json:"calls"`
+	Seconds        float64 `json:"seconds"`
+	Input          int64   `json:"input_tokens"`
+	CachedInput    int64   `json:"cached_input_tokens"`
+	Output         int64   `json:"output_tokens"`
+	CostUSD        float64 `json:"cost_usd"`
+	UnpricedTokens int64   `json:"unpriced_tokens"` // tokens with no known price
+}
+
+func (u Usage) Tokens() int64 { return u.Input + u.CachedInput + u.Output }
+
+func (u Usage) Plus(o Usage) Usage {
+	return Usage{u.Calls + o.Calls, u.Seconds + o.Seconds, u.Input + o.Input, u.CachedInput + o.CachedInput,
+		u.Output + o.Output, u.CostUSD + o.CostUSD, u.UnpricedTokens + o.UnpricedTokens}
+}
+
+// TotalUsage sums a per-station usage map.
+func TotalUsage(m map[string]Usage) Usage {
+	var t Usage
+	for _, u := range m {
+		t = t.Plus(u)
+	}
+	return t
+}
+
+// Short renders usage as "$1.84 · 412k tok", saying when part has no price.
+func (u Usage) Short() string {
+	switch {
+	case u.Calls == 0:
+		return "—"
+	case u.UnpricedTokens == u.Tokens():
+		return HumanTokens(u.Tokens()) + " tok"
+	case u.UnpricedTokens > 0:
+		return fmt.Sprintf("$%.2f + %s unpriced tok", u.CostUSD, HumanTokens(u.UnpricedTokens))
+	}
+	return fmt.Sprintf("$%.2f · %s tok", u.CostUSD, HumanTokens(u.Tokens()))
+}
+
+// HumanTokens renders 412345 as "412k".
+func HumanTokens(n int64) string {
+	switch {
+	case n >= 10_000_000:
+		return fmt.Sprintf("%.0fM", float64(n)/1e6)
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1e6)
+	case n >= 1000:
+		return fmt.Sprintf("%.0fk", float64(n)/1e3)
+	}
+	return strconv.FormatInt(n, 10)
+}
+
 // Run statuses.
 const (
 	Running        = "running"
@@ -120,6 +175,8 @@ type Run struct {
 	GateNotes    string            `json:"gate_notes,omitempty"`
 	Models       map[string]string `json:"models"`
 	Prompts      map[string]string `json:"prompts"`
+	// Usage per station key ("spec", "build", "fix", "review.codex", …).
+	Usage map[string]Usage `json:"usage,omitempty"`
 
 	Created time.Time `json:"created"`
 	Updated time.Time `json:"updated"`
@@ -212,6 +269,7 @@ type Verdict struct {
 	Title        string            `json:"title"`
 	Models       map[string]string `json:"models"`
 	Prompts      map[string]string `json:"prompts"`
+	Usage        map[string]Usage  `json:"usage,omitempty"` // up to the first gate verdict
 	Harvest      *Harvest          `json:"harvest,omitempty"`
 }
 

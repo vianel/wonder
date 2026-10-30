@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -19,11 +21,28 @@ func TestDetectRateLimit(t *testing.T) {
 }
 
 func TestClaudeParse(t *testing.T) {
-	got, err := Claude{}.Parse([]byte(`{"type":"result","is_error":false,"result":"{\"a\":1}"}`), "")
+	got, u, err := Claude{}.Parse([]byte(`{"type":"result","is_error":false,"result":"{\"a\":1}","total_cost_usd":0.09,
+		"usage":{"input_tokens":2,"cache_creation_input_tokens":100,"cache_read_input_tokens":50,"output_tokens":9}}`), "")
 	if err != nil || got != `{"a":1}` {
 		t.Fatalf("%q %v", got, err)
 	}
-	if _, err := (Claude{}).Parse([]byte(`{"is_error":true,"subtype":"error_max_turns","result":""}`), ""); err == nil {
+	if (u != Usage{Input: 102, CachedInput: 50, Output: 9, CostUSD: 0.09, HasCost: true}) {
+		t.Fatalf("usage %+v", u)
+	}
+	if _, _, err := (Claude{}).Parse([]byte(`{"is_error":true,"subtype":"error_max_turns","result":""}`), ""); err == nil {
 		t.Fatal("want error")
+	}
+}
+
+func TestCodexParseSumsTurns(t *testing.T) {
+	tmp := t.TempDir()
+	_ = os.WriteFile(filepath.Join(tmp, "last.txt"), []byte("done"), 0o644)
+	out := `{"type":"thread.started"}
+{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":600,"output_tokens":50,"reasoning_output_tokens":20}}
+not json
+{"type":"turn.completed","usage":{"input_tokens":500,"cached_input_tokens":0,"output_tokens":10}}`
+	text, u, err := Codex{}.Parse([]byte(out), tmp)
+	if err != nil || text != "done" || (u != Usage{Input: 900, CachedInput: 600, Output: 60}) {
+		t.Fatalf("%q %+v %v", text, u, err)
 	}
 }

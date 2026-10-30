@@ -24,6 +24,7 @@ import (
 	"github.com/vianel/wonder/internal/pipeline"
 	"github.com/vianel/wonder/internal/schema"
 	"github.com/vianel/wonder/internal/store"
+	"github.com/vianel/wonder/internal/worker"
 )
 
 // MinExamples is the dataset size below which results are called noisy.
@@ -36,6 +37,15 @@ type Eval struct {
 	Inv   pipeline.Invoker
 	GH    gh.Client
 	Out   io.Writer
+
+	spentMu sync.Mutex
+	spent   store.Usage // what replay itself used, kept apart from issue costs
+}
+
+func (e *Eval) spend(workerName string, u worker.Usage) {
+	e.spentMu.Lock()
+	defer e.spentMu.Unlock()
+	e.spent = e.spent.Plus(pipeline.Spend(e.Cfg, workerName, u))
 }
 
 // Outcome is what the gate effectively decided: a revert harvested later
@@ -71,17 +81,18 @@ type Row struct {
 
 // Result of a review replay, saved to .wonder/replays/ for promote.
 type Result struct {
-	TS            time.Time `json:"ts"`
-	Station       string    `json:"station"`
-	CurrentPath   string    `json:"current_path"`
-	CurrentHash   string    `json:"current_hash"`
-	CandidatePath string    `json:"candidate_path"`
-	CandidateHash string    `json:"candidate_hash"`
-	RunsPerPrompt int       `json:"runs_per_prompt"`
-	Current       Score     `json:"current"`
-	Candidate     Score     `json:"candidate"`
-	Passed        bool      `json:"passed"`
-	Rows          []Row     `json:"rows"`
+	TS            time.Time   `json:"ts"`
+	Station       string      `json:"station"`
+	CurrentPath   string      `json:"current_path"`
+	CurrentHash   string      `json:"current_hash"`
+	CandidatePath string      `json:"candidate_path"`
+	CandidateHash string      `json:"candidate_hash"`
+	RunsPerPrompt int         `json:"runs_per_prompt"`
+	Spent         store.Usage `json:"spent"`
+	Current       Score       `json:"current"`
+	Candidate     Score       `json:"candidate"`
+	Passed        bool        `json:"passed"`
+	Rows          []Row       `json:"rows"`
 }
 
 func resultName(station, hash string) string {
@@ -128,6 +139,7 @@ func (e *Eval) ReplayReview(ctx context.Context, candidate string, n int) (*Resu
 		res.Candidate.add(row.Candidate)
 	}
 	res.Passed = Passes(res.Current, res.Candidate)
+	res.Spent = e.spent
 	e.printReplay(res)
 	return res, e.Store.WriteJSON(resultName("review", res.CandidateHash), res)
 }
@@ -192,7 +204,8 @@ func (e *Eval) replayOne(ctx context.Context, v store.Verdict, cur, cand, judge 
 // approved a change the gate rejected missed it by definition; one that asked
 // for changes is checked by the judge against the gate's notes.
 func (e *Eval) scoreOnce(ctx context.Context, name string, w config.Worker, prompt, dir, gate, notes, judge string) (Score, error) {
-	raw, err := e.Inv.Invoke(ctx, name, w, prompt, dir, false, schema.Review)
+	raw, used, err := e.Inv.Invoke(ctx, name, w, prompt, dir, false, schema.Review)
+	e.spend(w.Worker, used)
 	if err != nil {
 		return Score{}, err
 	}
@@ -211,7 +224,8 @@ func (e *Eval) scoreOnce(ctx context.Context, name string, w config.Worker, prom
 		if err != nil {
 			return s, err
 		}
-		jraw, err := e.Inv.Invoke(ctx, name+"-judge", e.Cfg.Eval.Judge.Worker, jp, dir, false, schema.Judge)
+		jraw, jused, err := e.Inv.Invoke(ctx, name+"-judge", e.Cfg.Eval.Judge.Worker, jp, dir, false, schema.Judge)
+		e.spend(e.Cfg.Eval.Judge.Worker.Worker, jused)
 		if err != nil {
 			return s, err
 		}
@@ -260,6 +274,7 @@ func (e *Eval) printReplay(r *Result) {
 	}
 	fmt.Fprintf(tw, "total\t\t%d/%d\t%d/%d\t(over %d runs each)\n", r.Current.FalseAlarms, r.Current.Misses, r.Candidate.FalseAlarms, r.Candidate.Misses, r.Candidate.Runs)
 	tw.Flush()
+	fmt.Fprintf(e.Out, "replay used %s (not counted toward any issue)\n", r.Spent.Short())
 	if r.Passed {
 		fmt.Fprintf(e.Out, "✓ candidate %s passes: fewer misses, no more false alarms. `wonder promote --station review --prompt %s`\n", r.CandidateHash, r.CandidatePath)
 	} else {
@@ -459,10 +474,47 @@ func (e *Eval) Stats() error {
 	fmt.Fprintf(e.Out, "\nrouter rules (ignoring allow_auto): %d correct, %d unnecessary reviews, %d unsafe auto-merges\n",
 		router[Correct], router[Unnecessary], router[Unsafe])
 	fmt.Fprintf(e.Out, "babysit: %.1f CI fixes per run on average, max %d\n", float64(fixes)/float64(len(vs)), maxFix)
+	e.costStats(vs)
 	if len(vs) < MinExamples {
 		fmt.Fprintf(e.Out, "! fewer than %d verdicts: rates are noisy\n", MinExamples)
 	}
 	return nil
+}
+
+// costStats prints the average spend per run up to the first gate, by station.
+// Dollars are API-equivalent; on a subscription nothing is billed per call.
+func (e *Eval) costStats(vs []store.Verdict) {
+	byStation := map[string]store.Usage{}
+	var total store.Usage
+	n := 0
+	for _, v := range vs {
+		if len(v.Usage) == 0 {
+			continue // recorded before wonder tracked usage
+		}
+		n++
+		for k, u := range v.Usage {
+			station := strings.SplitN(k, ".", 2)[0]
+			byStation[station] = byStation[station].Plus(u)
+			total = total.Plus(u)
+		}
+	}
+	if n == 0 {
+		return
+	}
+	avg := func(u store.Usage) store.Usage {
+		f := float64(n)
+		return store.Usage{Calls: u.Calls, Seconds: u.Seconds / f, Input: u.Input / int64(n), CachedInput: u.CachedInput / int64(n),
+			Output: u.Output / int64(n), CostUSD: u.CostUSD / f, UnpricedTokens: u.UnpricedTokens / int64(n)}
+	}
+	fmt.Fprintf(e.Out, "\ncost per run up to the first gate (average of %d, API prices):\n", n)
+	tw := tabwriter.NewWriter(e.Out, 0, 4, 2, ' ', 0)
+	for _, st := range []string{"spec", "build", "fix", "review"} {
+		if u, ok := byStation[st]; ok {
+			fmt.Fprintf(tw, "  %s\t%s\t%s\t\n", st, avg(u).Short(), pipeline.Minutes(avg(u).Seconds))
+		}
+	}
+	fmt.Fprintf(tw, "  total\t%s\t%s\t\n", avg(total).Short(), pipeline.Minutes(avg(total).Seconds))
+	tw.Flush()
 }
 
 // Harvest records merge and revert facts for verdicts. A revert within 7 days

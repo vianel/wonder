@@ -73,8 +73,9 @@ type Engine struct {
 	Answer     AnswerFunc
 	AutoAnswer bool
 
-	logMu  sync.Mutex
-	paused atomic.Bool // a usage limit was hit: start no new stations
+	logMu   sync.Mutex
+	usageMu sync.Mutex  // parallel reviewers record usage at once
+	paused  atomic.Bool // a usage limit was hit: start no new stations
 }
 
 func (e *Engine) logf(r *store.Run, format string, a ...any) {
@@ -184,7 +185,13 @@ func (e *Engine) invoke(ctx context.Context, r *store.Run, station, key string, 
 		return "", fmt.Errorf("%s: %w", promptPath, err)
 	}
 	name := fmt.Sprintf("f%d-%s", r.Issue, strings.ReplaceAll(key, ".", "-"))
-	raw, err := e.Inv.Invoke(ctx, name, w, prompt, r.Worktree, write, schemaName)
+	raw, used, err := e.Inv.Invoke(ctx, name, w, prompt, r.Worktree, write, schemaName)
+	e.usageMu.Lock()
+	if r.Usage == nil {
+		r.Usage = map[string]store.Usage{}
+	}
+	r.Usage[key] = r.Usage[key].Plus(Spend(e.Cfg, w.Worker, used))
+	e.usageMu.Unlock()
 	if err != nil {
 		return "", err
 	}
@@ -196,6 +203,14 @@ func (e *Engine) record(r *store.Run, station, key, hash string, w config.Worker
 		r.Prompts, r.Models = map[string]string{}, map[string]string{}
 	}
 	r.Prompts[station], r.Models[key] = hash, ModelName(w)
+}
+
+// Minutes renders agent time as "23 min" or "45 s".
+func Minutes(sec float64) string {
+	if sec < 60 {
+		return fmt.Sprintf("%.0f s", sec)
+	}
+	return fmt.Sprintf("%.0f min", sec/60)
 }
 
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
@@ -498,7 +513,7 @@ func (e *Engine) merge(ctx context.Context, r *store.Run) error {
 	_, _ = gitx.Run(e.Root, "push", "-q", "origin", "--delete", r.Branch)
 	_ = gitx.WorktreeRemove(e.Root, r.Worktree)
 	_, _ = gitx.Run(e.Root, "branch", "-D", r.Branch)
-	e.logf(r, "✓ merged PR #%d", r.PR)
+	e.logf(r, "✓ merged PR #%d · spent %s in %s of agent time", r.PR, store.TotalUsage(r.Usage).Short(), Minutes(store.TotalUsage(r.Usage).Seconds))
 	r.Station, r.Status = StDone, store.Done
 	return nil
 }
@@ -540,7 +555,7 @@ func VerdictFor(r *store.Run) store.Verdict {
 		BaseSHA: r.BaseSHA, HeadSHA: r.HeadSHA,
 		GateFirst: r.GateFirst, GateNotes: r.GateNotes,
 		Reviews: r.Reviews, Labels: map[string]string{},
-		BabysitFixes: r.BabysitCount, Models: r.Models, Prompts: r.Prompts,
+		BabysitFixes: r.BabysitCount, Models: r.Models, Prompts: r.Prompts, Usage: r.Usage,
 	}
 	for k, rv := range r.Reviews {
 		v.Labels[k] = store.Label(rv.Verdict, r.GateFirst)

@@ -60,8 +60,9 @@ func (h *Herdr) Run(ctx context.Context, j Job) (Result, error) {
 	return r, err
 }
 
-// script writes stdout to a file and tees stderr to the pane, so progress is
-// visible. Plain bash 3.2 syntax so it runs on stock macOS.
+// script tees both stdout and stderr to files and to the pane, so progress is
+// visible either way (codex --json streams its events on stdout). Plain bash
+// 3.2 syntax so it runs on stock macOS.
 func (h *Herdr) script(j Job, marker string) string {
 	q := make([]string, len(j.Argv))
 	for i, a := range j.Argv {
@@ -70,7 +71,8 @@ func (h *Herdr) script(j Job, marker string) string {
 	t := func(f string) string { return shq(filepath.Join(j.Tmp, f)) }
 	return fmt.Sprintf(`cd %s || exit 1
 printf 'wonder: %%s\n' %s
-{ %s < %s 2>&1 1>&3 3>&- | tee %s >&2; echo "${PIPESTATUS[0]}" > %s; } 3> %s
+exec 4>&1
+{ %s < %s 2>&1 1>&3 3>&- | tee %s >&4; echo "${PIPESTATUS[0]}" > %s; } 3>&1 | tee %s
 printf '\n%%s\n' %s
 `, shq(j.Dir), shq(j.Name), strings.Join(q, " "), t("prompt.txt"), t("stderr.txt"), t("exit.txt"), t("stdout.txt"), shq(marker))
 }

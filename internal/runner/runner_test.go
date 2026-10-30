@@ -29,6 +29,11 @@ func TestHerdrRunsInPaneAndClosesIt(t *testing.T) {
 			t.Fatalf("%+v %v", r, err)
 		}
 	}
+	// Both streams also reach the pane.
+	pane, _ := os.ReadFile(filepath.Join(state, "w1:p2.log"))
+	if !strings.Contains(string(pane), "in'put") || !strings.Contains(string(pane), "it's progress") {
+		t.Fatalf("pane output: %q", pane)
+	}
 	open, _ := os.ReadFile(filepath.Join(state, "open"))
 	if strings.TrimSpace(string(open)) != "" {
 		t.Fatalf("panes left open: %q", open)

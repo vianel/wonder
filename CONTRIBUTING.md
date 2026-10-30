@@ -54,9 +54,10 @@ func (Gemini) Command(req Request, tmp string) []string {
 }
 
 // Parse returns the agent's final message; wonder extracts and validates the
-// JSON from it.
-func (Gemini) Parse(stdout []byte, tmp string) (string, error) {
-	return string(stdout), nil
+// JSON from it. Fill in Usage with whatever the CLI reports (tokens, and
+// CostUSD + HasCost if it gives dollars); leave it zero if it reports nothing.
+func (Gemini) Parse(stdout []byte, tmp string) (string, Usage, error) {
+	return string(stdout), Usage{}, nil
 }
 ```
 
@@ -66,7 +67,9 @@ Then:
    `knownWorkers` (`internal/config/config.go`).
 2. Add a fake `testdata/bin/gemini` that sources `_agent.sh`, like `claude` and
    `codex` do.
-3. If the CLI has its own usage-limit message, add a pattern to
+3. If the CLI reports tokens but no dollars, users can price it with
+   `[pricing.gemini]` in `wonder.toml`; add the name to `knownWorkers`.
+4. If the CLI has its own usage-limit message, add a pattern to
    `DetectRateLimit` with a test.
-4. Make sure read-only mode really can't write, and that write mode can't run
+5. Make sure read-only mode really can't write, and that write mode can't run
    `git commit`/`push` or `gh`.

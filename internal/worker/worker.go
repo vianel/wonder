@@ -23,8 +23,26 @@ type Worker interface {
 	Name() string
 	// Command returns argv. tmp is a private scratch dir for this invocation.
 	Command(req Request, tmp string) []string
-	// Parse returns the agent's final message from its stdout (or files in tmp).
-	Parse(stdout []byte, tmp string) (string, error)
+	// Parse returns the agent's final message from its stdout (or files in
+	// tmp), plus whatever token usage and cost the CLI reported.
+	Parse(stdout []byte, tmp string) (string, Usage, error)
+}
+
+// Usage is what one invocation consumed, as reported by the CLI.
+type Usage struct {
+	Input       int64   `json:"input"`        // uncached input tokens (incl. cache writes)
+	CachedInput int64   `json:"cached_input"` // input tokens read from cache
+	Output      int64   `json:"output"`       // output tokens (incl. reasoning)
+	CostUSD     float64 `json:"cost_usd"`     // 0 unless the CLI reported a cost
+	HasCost     bool    `json:"has_cost"`
+	Seconds     float64 `json:"seconds"` // wall time, set by the caller
+}
+
+func (u Usage) Tokens() int64 { return u.Input + u.CachedInput + u.Output }
+
+// Add sums two usages; the result has a cost only if both did.
+func (u Usage) Add(o Usage) Usage {
+	return Usage{u.Input + o.Input, u.CachedInput + o.CachedInput, u.Output + o.Output, u.CostUSD + o.CostUSD, u.HasCost && o.HasCost, u.Seconds + o.Seconds}
 }
 
 func Get(name string) (Worker, error) {

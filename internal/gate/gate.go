@@ -147,6 +147,24 @@ func why(r *store.Run) string {
 	return "Waiting for you because: " + strings.Join(rest, "; ") + "."
 }
 
+// spentLine says what the run has cost so far, then per station.
+func spentLine(r *store.Run) string {
+	t := store.TotalUsage(r.Usage)
+	s := fmt.Sprintf("Spent so far: %s (API prices) in %.0f min of agent time.", t.Short(), t.Seconds/60)
+	by := map[string]store.Usage{}
+	for k, u := range r.Usage {
+		st := strings.SplitN(k, ".", 2)[0]
+		by[st] = by[st].Plus(u)
+	}
+	var parts []string
+	for _, st := range []string{"spec", "build", "fix", "review"} {
+		if u, ok := by[st]; ok {
+			parts = append(parts, st+" "+u.Short())
+		}
+	}
+	return s + " " + strings.Join(parts, " · ")
+}
+
 func ciText(ci string) string {
 	switch ci {
 	case "pass":
@@ -187,6 +205,9 @@ func Summary(r *store.Run, width int) string {
 	fmt.Fprintln(&b, "  "+hang(headline(r), 2, width))
 	if w := why(r); w != "" {
 		fmt.Fprintln(&b, "  "+dim.Render(hang(w, 2, width)))
+	}
+	if len(r.Usage) > 0 {
+		fmt.Fprintln(&b, "  "+dim.Render(hang(spentLine(r), 2, width)))
 	}
 	if r.GateRounds > 0 {
 		fmt.Fprintln(&b, "  "+hang(fmt.Sprintf("Round %d. Last time you asked: %q. The fix agent has changed the PR since; the reviews below are from round 1.", r.GateRounds+1, r.GateNotes), 2, width))

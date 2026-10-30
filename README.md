@@ -198,6 +198,7 @@ When a PR reaches the gate, your terminal bell rings and the decision card opens
 
   ✓ Both reviewers approved, no findings.
   Waiting for you because auto-merge is off (router.allow_auto in wonder.toml).
+  Spent so far: $0.42 + 207k unpriced tok (API prices) in 2 min of agent time.
 
   What it should do (8)
     • text.go defines func IsPalindrome(s string) bool in package sandbox
@@ -319,6 +320,28 @@ harvested 6 verdicts
 ```
 
 Under ~15 verdicts the numbers are noisy, and wonder says so.
+
+---
+
+## 🪙 What did that cost?
+
+Every agent call is metered: tokens, dollars and time. `wonder status` has a
+COST column, the golden ticket shows what's been spent so far, the merge line
+shows the total, and `wonder stats` averages it per station:
+
+```
+#15   ✨ Delivery           ✓ merged PR #16 · spent $0.42 + 207k unpriced tok in 2 min of agent time
+```
+
+Claude Code reports its own cost (at API prices, also on a subscription).
+Codex reports tokens only; give it prices in `wonder.toml` to see dollars:
+
+```toml
+[pricing.codex]   # USD per million tokens
+input = 1.25
+cached_input = 0.125
+output = 10.0
+```
 
 ---
 

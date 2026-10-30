@@ -43,3 +43,20 @@ func TestLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestUsageShort(t *testing.T) {
+	priced := Usage{Calls: 1, Input: 400_000, Output: 12_000, CostUSD: 1.844}
+	if got := priced.Short(); got != "$1.84 · 412k tok" {
+		t.Fatal(got)
+	}
+	tokensOnly := Usage{Calls: 1, Input: 1_500_000, UnpricedTokens: 1_500_000}
+	if got := tokensOnly.Short(); got != "1.5M tok" {
+		t.Fatal(got)
+	}
+	if got := priced.Plus(tokensOnly).Short(); got != "$1.84 + 1.5M unpriced tok" {
+		t.Fatal(got)
+	}
+	if got := (Usage{}).Short(); got != "—" {
+		t.Fatal(got)
+	}
+}

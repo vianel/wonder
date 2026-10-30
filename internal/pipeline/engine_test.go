@@ -292,3 +292,35 @@ func TestUnansweredQuestionsParkTheRun(t *testing.T) {
 		t.Fatalf("resume: %+v %v", r, err)
 	}
 }
+
+func TestUsageIsRecordedPerStation(t *testing.T) {
+	en, _ := setup(t)
+	r := run(t, en, gateAlways(true, ""), 1)[0]
+	// claude: $0.01 and 1300 tokens per call; codex: 2300 tokens, no price.
+	if u := r.Usage["spec"]; u.Calls != 1 || u.CostUSD != 0.01 || u.Tokens() != 1300 || u.UnpricedTokens != 0 {
+		t.Fatalf("spec: %+v", u)
+	}
+	if u := r.Usage["build"]; u.Calls != 1 || u.CostUSD != 0 || u.UnpricedTokens != 2300 || u.CachedInput != 500 {
+		t.Fatalf("build: %+v", u)
+	}
+	if _, ok := r.Usage["review.codex"]; !ok {
+		t.Fatalf("usage keys: %v", r.Usage)
+	}
+	if got := store.TotalUsage(r.Usage).Short(); got != "$0.02 + 5k unpriced tok" {
+		t.Fatalf("total: %q", got)
+	}
+	vs, _ := en.Store.Verdicts()
+	if len(vs[0].Usage) != 4 {
+		t.Fatalf("verdict usage: %v", vs[0].Usage)
+	}
+}
+
+func TestPricingGivesCodexADollarFigure(t *testing.T) {
+	en, _ := setup(t)
+	en.Cfg.Pricing = map[string]config.Price{"codex": {Input: 1, CachedInput: 0.1, Output: 10}}
+	r := run(t, en, gateAlways(true, ""), 1)[0]
+	// 1500 uncached * $1/M + 500 cached * $0.1/M + 300 out * $10/M = $0.00455
+	if u := r.Usage["build"]; u.UnpricedTokens != 0 || u.CostUSD < 0.004549 || u.CostUSD > 0.004551 {
+		t.Fatalf("build: %+v", u)
+	}
+}

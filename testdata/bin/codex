@@ -9,5 +9,9 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-agent_reply() { printf '%s' "$1" > "$last"; }
+# Like codex exec --json: events on stdout, tokens only (2000 in incl. 500 cached, 300 out).
+agent_reply() {
+  printf '%s' "$1" > "$last"
+  echo '{"type":"turn.completed","usage":{"input_tokens":2000,"cached_input_tokens":500,"output_tokens":300}}'
+}
 source "$(dirname "$0")/_agent.sh"

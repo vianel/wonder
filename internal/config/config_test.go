@@ -37,6 +37,14 @@ func TestLoad(t *testing.T) {
 	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "gemini") {
 		t.Fatalf("want unknown worker error, got %v", err)
 	}
+	write("[pricing.codex]\ninput = 1.25\noutput = 10\n[[stations.review.workers]]\nworker = \"claude\"\n")
+	if c, err := Load(dir); err != nil || c.Pricing["codex"].Output != 10 {
+		t.Fatalf("pricing: %+v %v", c, err)
+	}
+	write("[pricing.gemini]\ninput = 1\n[[stations.review.workers]]\nworker = \"claude\"\n")
+	if _, err := Load(dir); err == nil {
+		t.Fatal("want unknown pricing worker error")
+	}
 	write("[factory]\nmax_pane = 2\n")
 	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "unknown keys") {
 		t.Fatalf("want unknown key error, got %v", err)

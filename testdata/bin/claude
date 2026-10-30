@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Fake claude -p --output-format json.
 WORKER=claude
-agent_reply() { python3 -c 'import json,sys; print(json.dumps({"type":"result","is_error":False,"result":sys.argv[1]}))' "$1"; }
+# Like the real CLI: every call reports 1000 in / 200 cached / 100 out and $0.01.
+agent_reply() { python3 -c 'import json,sys; print(json.dumps({"type":"result","is_error":False,"result":sys.argv[1],"total_cost_usd":0.01,"usage":{"input_tokens":1000,"cache_creation_input_tokens":0,"cache_read_input_tokens":200,"output_tokens":100}}))' "$1"; }
 source "$(dirname "$0")/_agent.sh"
