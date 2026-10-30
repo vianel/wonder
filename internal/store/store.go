@@ -26,6 +26,27 @@ type Spec struct {
 	Assumptions        []string `json:"assumptions"`
 	Risk               string   `json:"risk"`
 	FilesLikelyTouched []string `json:"files_likely_touched"`
+	// Questions the spec writer could not settle from the issue. Answers are
+	// filled in before the build, so every later station sees them.
+	Questions []Question `json:"questions,omitempty"`
+}
+
+type Question struct {
+	Question   string `json:"question"`
+	Suggested  string `json:"suggested"`
+	Answer     string `json:"answer,omitempty"`
+	AnsweredBy string `json:"answered_by,omitempty"` // you | suggested
+}
+
+// Unanswered returns the indexes of questions that still need an answer.
+func (s *Spec) Unanswered() []int {
+	var idx []int
+	for i, q := range s.Questions {
+		if q.AnsweredBy == "" {
+			idx = append(idx, i)
+		}
+	}
+	return idx
 }
 
 // WorkerOut is the worker JSON contract shared by write stations.
@@ -60,12 +81,13 @@ type Route struct {
 
 // Run statuses.
 const (
-	Running     = "running"
-	WaitingGate = "waiting_gate"
-	Blocked     = "blocked"
-	Paused      = "paused_rate_limit"
-	Failed      = "failed"
-	Done        = "done"
+	Running        = "running"
+	WaitingGate    = "waiting_gate"
+	WaitingAnswers = "waiting_answers"
+	Blocked        = "blocked"
+	Paused         = "paused_rate_limit"
+	Failed         = "failed"
+	Done           = "done"
 )
 
 type Run struct {

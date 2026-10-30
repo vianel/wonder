@@ -29,6 +29,7 @@ import (
 // Stations, in order. pr, ci and fix loop until CI passes.
 const (
 	StSpec   = "spec"
+	StAsk    = "ask" // the spec's questions get answered, once, up front
 	StBuild  = "build"
 	StPR     = "pr"
 	StCI     = "ci"
@@ -43,6 +44,7 @@ const (
 // Label is the factory-floor name shown to humans.
 var Label = map[string]string{
 	StSpec:   "🏭 Planning Room",
+	StAsk:    "🏭 Planning Room",
 	StBuild:  "⚙️  Invention Room",
 	StPR:     "🍬 Production Line",
 	StCI:     "🍬 Production Line",
@@ -65,6 +67,11 @@ type Engine struct {
 	Store store.Store
 	GH    gh.Client
 	Log   io.Writer
+
+	// Answer asks the human the spec questions of several runs at once.
+	// AutoAnswer takes the suggested answers instead (wonder run --yes).
+	Answer     AnswerFunc
+	AutoAnswer bool
 
 	logMu  sync.Mutex
 	paused atomic.Bool // a usage limit was hit: start no new stations
@@ -89,14 +96,17 @@ func (e *Engine) Open(issue int) (*store.Run, error) {
 // Wake makes a paused, blocked or failed run runnable again.
 func Wake(r *store.Run) {
 	switch r.Status {
-	case store.Paused, store.Blocked, store.Failed:
+	case store.Paused, store.Blocked, store.Failed, store.WaitingAnswers:
 		r.Status, r.Error, r.ResetAt = store.Running, "", nil
 	}
 }
 
-// Advance runs stations until the run waits on the gate, finishes or stops.
-func (e *Engine) Advance(ctx context.Context, r *store.Run) error {
-	for r.Status == store.Running {
+// Advance runs stations until the run waits on a human, finishes or stops.
+func (e *Engine) Advance(ctx context.Context, r *store.Run) error { return e.advance(ctx, r, nil) }
+
+// advance is Advance with an optional early stop, checked before each station.
+func (e *Engine) advance(ctx context.Context, r *store.Run, stop func(*store.Run) bool) error {
+	for r.Status == store.Running && (stop == nil || !stop(r)) {
 		if e.paused.Load() {
 			r.Status, r.Error = store.Paused, "another station hit a usage limit"
 			break
@@ -132,6 +142,8 @@ func (e *Engine) step(ctx context.Context, r *store.Run) error {
 	switch r.Station {
 	case StSpec:
 		return e.spec(ctx, r)
+	case StAsk:
+		return e.ask(r)
 	case StBuild:
 		return e.build(ctx, r)
 	case StPR:
@@ -224,7 +236,26 @@ func (e *Engine) spec(ctx context.Context, r *store.Run) error {
 	}
 	e.record(r, StSpec, StSpec, hash, w.Worker)
 	e.logf(r, "✓ spec ready (risk %s, %d criteria)", spec.Risk, len(spec.AcceptanceCriteria))
-	r.Spec, r.Station = &spec, StBuild
+	r.Spec, r.Station = &spec, StAsk
+	return nil
+}
+
+func (e *Engine) ask(r *store.Run) error {
+	if r.Spec == nil || len(r.Spec.Unanswered()) == 0 {
+		r.Station = StBuild
+		return nil
+	}
+	if e.AutoAnswer {
+		for _, i := range r.Spec.Unanswered() {
+			q := &r.Spec.Questions[i]
+			q.Answer, q.AnsweredBy = q.Suggested, "suggested"
+		}
+		e.logf(r, "took the suggested answers to %d question(s)", len(r.Spec.Questions))
+		r.Station = StBuild
+		return nil
+	}
+	r.Status = store.WaitingAnswers
+	e.logf(r, "%d question(s) for you: wonder resume %d", len(r.Spec.Unanswered()), r.Issue)
 	return nil
 }
 
@@ -526,6 +557,47 @@ func VerdictFor(r *store.Run) store.Verdict {
 	return v
 }
 
+// AnswerFunc asks the human the open spec questions of every run in runs,
+// filling in Answer and AnsweredBy. It returns false if the human stopped.
+type AnswerFunc func(runs []*store.Run) bool
+
+// planFirst writes every spec before anything is built and asks all their
+// questions in one batch, so after that the human can walk away until the gate.
+func (e *Engine) planFirst(ctx context.Context, runs []*store.Run) error {
+	var wg sync.WaitGroup
+	errs := make([]error, len(runs))
+	for i, r := range runs {
+		if r.Status == store.Running && r.Station == StSpec {
+			wg.Add(1)
+			go func(i int, r *store.Run) {
+				defer wg.Done()
+				errs[i] = e.advance(ctx, r, func(r *store.Run) bool { return r.Station != StSpec })
+			}(i, r)
+		}
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil || e.AutoAnswer || e.Answer == nil {
+		return err
+	}
+	var ask []*store.Run
+	for _, r := range runs {
+		if r.Status == store.Running && r.Station == StAsk && len(r.Spec.Unanswered()) > 0 {
+			ask = append(ask, r)
+		}
+	}
+	if len(ask) == 0 {
+		return nil
+	}
+	sort.Slice(ask, func(i, j int) bool { return ask[i].Issue < ask[j].Issue })
+	e.Answer(ask) // unanswered questions stay open; the ask station parks the run
+	for _, r := range ask {
+		if err := e.Store.Save(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GateFunc asks a human about a run waiting on the gate. ok=false leaves the
 // run waiting (the human skipped or quit).
 type GateFunc func(r *store.Run) (ship bool, notes string, ok bool)
@@ -533,6 +605,9 @@ type GateFunc func(r *store.Run) (ship bool, notes string, ok bool)
 // RunAll advances runs in parallel (workers are capped by the runner), then
 // asks gate about each run waiting on a human, and repeats until nothing moves.
 func (e *Engine) RunAll(ctx context.Context, runs []*store.Run, gate GateFunc) error {
+	if err := e.planFirst(ctx, runs); err != nil {
+		return err
+	}
 	for {
 		var wg sync.WaitGroup
 		errs := make([]error, len(runs))

@@ -7,6 +7,8 @@
 #   FAKE_BUILD_STATUS    done|blocked|failed
 #   FAKE_JUDGE_MISSED    true|false
 #   FAKE_BUILD_HOOK      shell command run during the first build
+#   FAKE_SPEC_QUESTIONS=1 the spec asks one question (suggested: spaces)
+#   FAKE_EXPECT_IN_BUILD build fails unless its prompt contains this text
 prompt=$(cat)
 state="${FAKE_STATE:-/tmp}"
 echo "$WORKER" >> "$state/agent_calls.log"
@@ -19,8 +21,13 @@ if [ "${FAKE_INVALID_ONCE:-}" = 1 ] && [ ! -e "$state/invalid_done" ]; then
 fi
 case "$prompt" in
   *"You are the spec writer"*)
-    agent_reply '{"goal":"Add a greeting","acceptance_criteria":["greet() returns hello"],"assumptions":[],"risk":"low","files_likely_touched":["greet.txt"]}' ;;
+    q=''
+    [ "${FAKE_SPEC_QUESTIONS:-}" = 1 ] && q=',"questions":[{"question":"Tabs or spaces?","suggested":"spaces"}]'
+    agent_reply "{\"goal\":\"Add a greeting\",\"acceptance_criteria\":[\"greet() returns hello\"],\"assumptions\":[],\"risk\":\"low\",\"files_likely_touched\":[\"greet.txt\"]$q}" ;;
   *"You are the builder"*|*"You are the fixer"*)
+    if [ -n "${FAKE_EXPECT_IN_BUILD:-}" ] && [[ "$prompt" != *"$FAKE_EXPECT_IN_BUILD"* ]]; then
+      echo "build prompt is missing: $FAKE_EXPECT_IN_BUILD" >&2; exit 3
+    fi
     n=$(( $(cat "$state/edits" 2>/dev/null || echo 0) + 1 )); echo $n > "$state/edits"
     echo "edit $n" >> greet.txt
     # FAKE_BUILD_HOOK runs once, during the first build (e.g. to move main).

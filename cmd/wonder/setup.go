@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	wonder "github.com/vianel/wonder"
 	"github.com/vianel/wonder/internal/config"
+	"github.com/vianel/wonder/internal/gate"
 	"github.com/vianel/wonder/internal/gitx"
 	"github.com/vianel/wonder/internal/runner"
 )
@@ -20,8 +21,8 @@ import (
 var hints = map[string]string{
 	"git":    "install git: https://git-scm.com/downloads",
 	"gh":     "install the GitHub CLI: https://cli.github.com, then `gh auth login`",
-	"claude": "install Claude Code: https://docs.claude.com/en/docs/claude-code",
-	"codex":  "install Codex CLI: `npm install -g @openai/codex` (https://github.com/openai/codex)",
+	"claude": "install Claude Code: `curl -fsSL https://claude.ai/install.sh | bash`",
+	"codex":  "install Codex CLI: `brew install --cask codex` or `npm install -g @openai/codex`",
 	"herdr":  "optional, to watch workers in panes: https://herdr.dev",
 }
 
@@ -40,7 +41,6 @@ func installedWorkers() []string {
 func doctor(w io.Writer, dir string) bool {
 	ok := true
 	line := func(mark, name, msg string) { fmt.Fprintf(w, "%s %-10s %s\n", mark, name, msg) }
-	found := func(bin string) bool { _, err := exec.LookPath(bin); return err == nil }
 
 	if !found("git") {
 		line("✗", "git", "not found — "+hints["git"])
@@ -127,8 +127,16 @@ func doctor(w io.Writer, dir string) bool {
 	} else {
 		fmt.Fprintln(w, "\nFix the ✗ lines above, then run `wonder doctor` again.")
 	}
+	for _, t := range []string{"gh", "claude", "codex", "herdr"} {
+		if !found(t) {
+			fmt.Fprintln(w, "Run `wonder doctor --fix` to install missing tools (it asks before each one).")
+			break
+		}
+	}
 	return ok
 }
+
+func found(bin string) bool { _, err := exec.LookPath(bin); return err == nil }
 
 func firstLine(s string) string {
 	s = strings.TrimSpace(s)
@@ -139,19 +147,37 @@ func firstLine(s string) string {
 }
 
 func doctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var fix bool
+	c := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check that git, gh, the agent CLIs and the repo are ready",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			wd, _ := os.Getwd()
-			if !doctor(os.Stdout, wd) {
+			ok := doctor(os.Stdout, wd)
+			if fix {
+				in := newInstaller()
+				switch missing := in.missing("gh", "claude", "codex", "herdr"); {
+				case len(missing) == 0:
+					fmt.Println("\nNothing to install.")
+				case !gate.Interactive():
+					fmt.Println("\n--fix asks before installing anything, so it needs a terminal.")
+				default:
+					if len(in.offer(missing...)) > 0 {
+						fmt.Print("\nChecking again…\n\n")
+						ok = doctor(os.Stdout, wd)
+					}
+				}
+			}
+			if !ok {
 				cmd.SilenceErrors = true
 				return errors.New("doctor found problems")
 			}
 			return nil
 		},
 	}
+	c.Flags().BoolVar(&fix, "fix", false, "offer to install missing tools (asks before each one)")
+	return c
 }
 
 func workerTOML(w config.Worker) string {
@@ -198,8 +224,14 @@ max_diff_lines = %d
 }
 
 // initRepo writes wonder.toml, copies the default prompts and updates .gitignore.
-func initRepo(w io.Writer, root string, force, commitVerdicts bool) error {
+// inst, when set, is used to offer installing a worker if none is on PATH.
+func initRepo(w io.Writer, root string, force, commitVerdicts bool, inst *installer) error {
 	workers := installedWorkers()
+	if len(workers) == 0 && inst != nil {
+		fmt.Fprintln(w, "wonder needs at least one worker CLI. Install one or both:")
+		inst.offer("claude", "codex")
+		workers = installedWorkers()
+	}
 	if len(workers) == 0 {
 		return errors.New("neither claude nor codex is on PATH:\n  " + hints["claude"] + "\n  " + hints["codex"])
 	}
@@ -283,7 +315,12 @@ func initCmd() *cobra.Command {
 			if err != nil {
 				return errors.New("not inside a git repository")
 			}
-			return initRepo(os.Stdout, root, force, commitVerdicts)
+			var inst *installer
+			if gate.Interactive() {
+				i := newInstaller()
+				inst = &i
+			}
+			return initRepo(os.Stdout, root, force, commitVerdicts, inst)
 		},
 	}
 	c.Flags().BoolVar(&force, "force", false, "overwrite wonder.toml and the prompt files")

@@ -83,7 +83,7 @@ func TestInitWithOnlyCodex(t *testing.T) {
 	pathWith(t, "git", "gh", "codex")
 	_ = os.WriteFile(filepath.Join(root, ".gitignore"), []byte("node_modules"), 0o644)
 	var out bytes.Buffer
-	if err := initRepo(&out, root, false, false); err != nil {
+	if err := initRepo(&out, root, false, false, nil); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := config.Load(root)
@@ -100,10 +100,10 @@ func TestInitWithOnlyCodex(t *testing.T) {
 	if !strings.HasPrefix(string(gi), "node_modules\n") || !strings.Contains(string(gi), ".wonder/*\n!.wonder/prompts/\n") || strings.Contains(string(gi), "!.wonder/verdicts.jsonl") {
 		t.Fatalf(".gitignore:\n%s", gi)
 	}
-	if err := initRepo(&out, root, false, true); err == nil {
+	if err := initRepo(&out, root, false, true, nil); err == nil {
 		t.Fatal("second init without --force must refuse")
 	}
-	if err := initRepo(&out, root, true, true); err != nil {
+	if err := initRepo(&out, root, true, true, nil); err != nil {
 		t.Fatal(err)
 	}
 	gi, _ = os.ReadFile(filepath.Join(root, ".gitignore"))

@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/term"
 	"github.com/vianel/wonder/internal/gitx"
 	"github.com/vianel/wonder/internal/store"
 )
@@ -206,6 +207,17 @@ func Summary(r *store.Run, width int) string {
 		}
 	}
 
+	if r.Spec != nil && len(r.Spec.Questions) > 0 {
+		fmt.Fprintf(&b, "\n  %s\n", bold.Render("Answered before the build"))
+		for _, q := range r.Spec.Questions {
+			by := ""
+			if q.AnsweredBy == "suggested" {
+				by = dim.Render(" (suggested; nobody was asked)")
+			}
+			fmt.Fprintf(&b, "    • %s\n", hang(q.Question+" → "+q.Answer+by, 6, width))
+		}
+	}
+
 	if len(r.Reviews) > 0 {
 		fmt.Fprintf(&b, "\n  %s\n", bold.Render("Reviewers"))
 		for _, n := range sortedNames(r.Reviews) {
@@ -259,6 +271,48 @@ func Ask(r *store.Run) (ship bool, notes string, ok bool) {
 	return Plain(r, stdin, os.Stdout)
 }
 
+// Questions asks the open spec questions of all runs in one go, on stdin.
+func Questions(runs []*store.Run) bool {
+	if stdin == nil {
+		stdin = bufio.NewScanner(os.Stdin)
+	}
+	width := 80
+	if w, _, err := term.GetSize(os.Stdout.Fd()); err == nil && w > 0 {
+		width = w
+	}
+	return AskQuestions(runs, stdin, os.Stdout, width)
+}
+
+// AskQuestions asks every unanswered question; an empty line accepts the
+// suggestion. It returns false if input ends before all are answered.
+func AskQuestions(runs []*store.Run, sc *bufio.Scanner, out io.Writer, width int) bool {
+	width = min(width, 100) - 1
+	n := 0
+	for _, r := range runs {
+		n += len(r.Spec.Unanswered())
+	}
+	fmt.Fprintf(out, "\a\n%s\n%s\n", hang(key.Render("🏭 Planning Room ")+
+		bold.Render(fmt.Sprintf("has %d question(s) before building. Answer now, then you can walk away.", n)), 0, width),
+		dim.Render("Press enter to take the suggested answer."))
+	for _, r := range runs {
+		fmt.Fprintf(out, "\n  %s\n", bold.Render(fmt.Sprintf("#%d %s", r.Issue, r.Title)))
+		for k, i := range r.Spec.Unanswered() {
+			q := &r.Spec.Questions[i]
+			fmt.Fprintf(out, "  %d. %s\n     %s\n     › ", k+1, hang(q.Question, 5, width), hang(dim.Render("suggested: ")+q.Suggested, 5, width))
+			if !sc.Scan() {
+				fmt.Fprintln(out)
+				return false
+			}
+			q.Answer, q.AnsweredBy = q.Suggested, "you"
+			if a := strings.TrimSpace(sc.Text()); a != "" {
+				q.Answer = a
+			}
+		}
+	}
+	fmt.Fprintf(out, "\n%s\n\n", good.Render(hang("✓ Got it. Nothing else needs you until the golden ticket. Go get a chocolate. 🍫", 0, width)))
+	return true
+}
+
 // stdin is shared by every plain gate prompt in the process, so lines piped
 // in for later rounds are not lost in a discarded buffer.
 var stdin *bufio.Scanner
@@ -295,7 +349,13 @@ type model struct {
 
 // TUI runs the Bubble Tea gate. Keys: s ship, c changes, o open PR, d diff, q skip.
 func TUI(r *store.Run) (bool, string, bool) {
-	fmt.Print("\a") // ring the bell: a run reached the gate
+	// The card is printed as plain output so it scrolls like any text even when
+	// it is taller than the terminal; Bubble Tea only draws the actions below it.
+	width := 80
+	if w, _, err := term.GetSize(os.Stdout.Fd()); err == nil && w > 0 {
+		width = w
+	}
+	fmt.Print("\a" + Summary(r, width) + "\n") // the bell: a run reached the gate
 	m, err := tea.NewProgram(model{run: r, notes: newInput()}).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "gate:", err)
@@ -379,7 +439,7 @@ func (m model) View() string {
 		}
 		return fmt.Sprintf("#%d is still waiting. Run `wonder gate %d` when you're ready.\n", r.Issue, r.Issue)
 	}
-	v := Summary(r, m.width) + "\n"
+	v := ""
 	if m.writing {
 		v += "  " + bold.Render(fmt.Sprintf("Request changes on PR #%d", r.PR)) + "\n"
 		v += "  " + dim.Render("Tell the fix agent what to change. It gets this text as its instructions.") + "\n\n"

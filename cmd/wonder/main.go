@@ -118,8 +118,12 @@ func issues(args []string) ([]int, error) {
 }
 
 // drive opens or resumes the runs and pushes them through the pipeline.
-func drive(a *app, nums []int, askGate bool) error {
+// yes takes the spec's suggested answers instead of asking (also when there
+// is no terminal to ask on).
+func drive(a *app, nums []int, askGate, yes bool) error {
 	e := a.engine()
+	e.AutoAnswer = yes || !gate.Interactive()
+	e.Answer = gate.Questions
 	var runs []*store.Run
 	for _, n := range nums {
 		r, err := e.Open(n)
@@ -153,6 +157,8 @@ func summary(runs []*store.Run) {
 		switch r.Status {
 		case store.WaitingGate:
 			fmt.Printf("#%d waiting at the gate: wonder gate %d\n", r.Issue, r.Issue)
+		case store.WaitingAnswers:
+			fmt.Printf("#%d has questions for you: wonder resume %d\n", r.Issue, r.Issue)
 		case store.Paused:
 			fmt.Printf("#%d paused (%s): wonder resume %d\n", r.Issue, r.Error, r.Issue)
 		case store.Blocked, store.Failed:
@@ -162,7 +168,7 @@ func summary(runs []*store.Run) {
 }
 
 func runCmd() *cobra.Command {
-	var noGate bool
+	var noGate, yes bool
 	c := &cobra.Command{
 		Use:   "run <issue>...",
 		Short: "Run issues through the pipeline, up to max_panes workers in parallel",
@@ -176,15 +182,17 @@ func runCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return drive(a, nums, !noGate)
+			return drive(a, nums, !noGate, yes)
 		},
 	}
 	c.Flags().BoolVar(&noGate, "no-gate", false, "leave runs waiting at the gate instead of asking now")
+	c.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask the spec's questions; take the suggested answers")
 	return c
 }
 
 func resumeCmd() *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+	c := &cobra.Command{
 		Use:   "resume <issue>...",
 		Short: "Continue runs from their saved state",
 		Args:  cobra.MinimumNArgs(1),
@@ -202,9 +210,11 @@ func resumeCmd() *cobra.Command {
 					return fmt.Errorf("no saved run for #%d; start it with `wonder run %d`", n, n)
 				}
 			}
-			return drive(a, nums, true)
+			return drive(a, nums, true, yes)
 		},
 	}
+	c.Flags().BoolVarP(&yes, "yes", "y", false, "take the suggested answers to open questions")
+	return c
 }
 
 func gateCmd() *cobra.Command {
@@ -245,7 +255,7 @@ func gateCmd() *cobra.Command {
 					return fmt.Errorf("#%d is not waiting at the gate (%s at %s)", n, r.Status, r.Station)
 				}
 			}
-			return drive(a, nums, true)
+			return drive(a, nums, true, false)
 		},
 	}
 }

@@ -33,7 +33,7 @@ func setup(t *testing.T) (*Engine, env) {
 	e := env{t: t, root: t.TempDir(), ghDir: t.TempDir(), state: t.TempDir()}
 	t.Setenv("FAKE_GH_DIR", e.ghDir)
 	t.Setenv("FAKE_STATE", e.state)
-	for _, k := range []string{"FAKE_CI", "FAKE_REVIEW_CODEX", "FAKE_REVIEW_CLAUDE", "FAKE_INVALID_ONCE", "FAKE_RATE_LIMIT", "FAKE_BUILD_STATUS", "FAKE_MERGEABLE", "FAKE_BUILD_HOOK"} {
+	for _, k := range []string{"FAKE_CI", "FAKE_REVIEW_CODEX", "FAKE_REVIEW_CLAUDE", "FAKE_INVALID_ONCE", "FAKE_RATE_LIMIT", "FAKE_BUILD_STATUS", "FAKE_MERGEABLE", "FAKE_BUILD_HOOK", "FAKE_SPEC_QUESTIONS", "FAKE_EXPECT_IN_BUILD"} {
 		t.Setenv(k, "")
 	}
 	t.Setenv("GIT_AUTHOR_NAME", "t")
@@ -229,5 +229,66 @@ func TestConflictWithBaseGoesToFixer(t *testing.T) {
 	agents, _ := os.ReadFile(filepath.Join(e.state, "agent_calls.log"))
 	if strings.Count(string(agents), "codex") != 3 { // build, conflict fix, review
 		t.Fatalf("agent calls:\n%s", agents)
+	}
+}
+
+func TestQuestionsAskedOnceUpFrontForAllIssues(t *testing.T) {
+	en, e := setup(t)
+	t.Setenv("FAKE_SPEC_QUESTIONS", "1")
+	t.Setenv("FAKE_EXPECT_IN_BUILD", "tabs, always")
+	calls := 0
+	en.Answer = func(runs []*store.Run) bool {
+		calls++
+		agents, _ := os.ReadFile(filepath.Join(e.state, "agent_calls.log"))
+		if len(runs) != 2 || strings.Count(string(agents), "\n") != 2 {
+			t.Errorf("want both specs and nothing else before asking; runs=%d calls:\n%s", len(runs), agents)
+		}
+		for _, r := range runs {
+			for _, i := range r.Spec.Unanswered() {
+				r.Spec.Questions[i].Answer, r.Spec.Questions[i].AnsweredBy = "tabs, always", "you"
+			}
+		}
+		return true
+	}
+	for _, r := range run(t, en, gateAlways(true, ""), 1, 2) {
+		if r.Status != store.Done || r.Spec.Questions[0].AnsweredBy != "you" {
+			t.Fatalf("run: %+v", r)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("want one batch of questions, got %d", calls)
+	}
+	if vs, _ := en.Store.Verdicts(); vs[0].Spec.Questions[0].Answer != "tabs, always" {
+		t.Fatalf("answer not in verdict spec: %+v", vs[0].Spec)
+	}
+}
+
+func TestAutoAnswerTakesSuggestions(t *testing.T) {
+	en, _ := setup(t)
+	t.Setenv("FAKE_SPEC_QUESTIONS", "1")
+	t.Setenv("FAKE_EXPECT_IN_BUILD", "spaces")
+	en.AutoAnswer = true
+	en.Answer = func([]*store.Run) bool { t.Fatal("must not ask with --yes"); return false }
+	r := run(t, en, gateAlways(true, ""), 1)[0]
+	if r.Status != store.Done || r.Spec.Questions[0].AnsweredBy != "suggested" {
+		t.Fatalf("run: %+v", r)
+	}
+}
+
+func TestUnansweredQuestionsParkTheRun(t *testing.T) {
+	en, _ := setup(t)
+	t.Setenv("FAKE_SPEC_QUESTIONS", "1")
+	en.Answer = func([]*store.Run) bool { return false } // human walked off
+	r := run(t, en, nil, 1)[0]
+	if r.Status != store.WaitingAnswers || r.Station != StAsk {
+		t.Fatalf("run: %+v", r)
+	}
+	Wake(r)
+	en.Answer = func(runs []*store.Run) bool {
+		runs[0].Spec.Questions[0].Answer, runs[0].Spec.Questions[0].AnsweredBy = "spaces", "you"
+		return true
+	}
+	if err := en.RunAll(context.Background(), []*store.Run{r}, gateAlways(true, "")); err != nil || r.Status != store.Done {
+		t.Fatalf("resume: %+v %v", r, err)
 	}
 }

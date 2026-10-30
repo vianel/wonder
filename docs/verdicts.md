@@ -14,8 +14,9 @@ The exception is `.wonder/prompts/`, which you should commit.
 
 ## Run statuses
 
-`running` → `waiting_gate` → `done`, plus `paused_rate_limit`, `blocked` and
-`failed`. `wonder resume <issue>` continues from any of them.
+`running` → `waiting_gate` → `done`, plus `waiting_answers` (spec questions
+not answered yet), `paused_rate_limit`, `blocked` and `failed`.
+`wonder resume <issue>` continues from any of them.
 
 ## Verdict line
 

@@ -7,6 +7,7 @@ Spec:
 {{.Spec}}
 
 Rules:
+- The spec's "questions" were answered before you started; follow each "answer".
 - Edit files only. Never run git commit, git push, or gh; the pipeline does that.
 - Add or update tests for the acceptance criteria and run them.
 - Keep the change as small as the spec allows. Do not refactor unrelated code.

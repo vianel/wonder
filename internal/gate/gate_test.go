@@ -73,3 +73,23 @@ func TestTUIKeys(t *testing.T) {
 		t.Fatalf("changes: %+v %q", m, m.notes.Value())
 	}
 }
+
+func TestAskQuestions(t *testing.T) {
+	mk := func(n int) *store.Run {
+		return &store.Run{Issue: n, Spec: &store.Spec{Questions: []store.Question{{Question: "Tabs?", Suggested: "spaces"}}}}
+	}
+	a, b := mk(1), mk(2)
+	if !AskQuestions([]*store.Run{a, b}, lines("tabs\n\n"), io.Discard, 80) {
+		t.Fatal("want ok")
+	}
+	if q := a.Spec.Questions[0]; q.Answer != "tabs" || q.AnsweredBy != "you" {
+		t.Fatalf("a: %+v", q)
+	}
+	if q := b.Spec.Questions[0]; q.Answer != "spaces" || q.AnsweredBy != "you" {
+		t.Fatalf("enter must accept the suggestion: %+v", q)
+	}
+	c := mk(3)
+	if AskQuestions([]*store.Run{c}, lines(""), io.Discard, 80) || len(c.Spec.Unanswered()) != 1 {
+		t.Fatal("EOF must leave the question open")
+	}
+}

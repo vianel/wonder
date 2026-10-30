@@ -81,6 +81,18 @@ go install github.com/vianel/wonder/cmd/wonder@latest
 echo 'export PATH="$HOME/go/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
 ```
 
+Missing something? `wonder doctor --fix` offers to install `gh`, `claude`, `codex`
+and `herdr` for you, one at a time. It shows the exact command and does nothing
+unless you type `y`:
+
+```
+claude is not installed (a worker: Claude Code).
+  wonder can run:  curl -fsSL https://claude.ai/install.sh | bash
+  Run it now? [y/N] y
+  ✓ claude installed
+  Log in now (claude auth login)? [y/N] y
+```
+
 Workers use whatever login `claude` and `codex` already have, subscription or
 API key. With only one of them installed, it staffs every room.
 
@@ -135,7 +147,33 @@ $ wonder run 7          # also takes #7 or the issue URL
 #7    🎫 Golden Ticket      waiting for you: all rules pass, but router.allow_auto is off
 ```
 
-Got a whole batch? `wonder run 12 13 14` runs them in parallel, up to
+If the issue leaves real choices open, the Planning Room asks you about them
+**before anything is built**. Each question comes with a suggested answer; press
+enter to take it. After that, nothing needs you until the golden ticket:
+
+```
+🏭 Planning Room has 4 question(s) before building. Answer now, then you can walk away.
+Press enter to take the suggested answer.
+
+  #13 Add a Pad function
+  1. Which side should the padding go on: right (left-aligned text), left
+     (right-aligned text), or should the caller choose?
+     suggested: Right-pad only, with a single Pad(s, width) signature.
+     › Let the caller choose: add PadLeft and PadRight
+  2. What should the padding character be: a space, or configurable?
+     suggested: A space, not configurable.
+     ›
+
+✓ Got it. Nothing else needs you until the golden ticket. Go get a chocolate. 🍫
+```
+
+Your answers go into the spec, so the builder, the fixer and the reviewers all
+see them, and the golden ticket shows them again. In a hurry? `wonder run --yes`
+takes every suggested answer without asking, so you can start a batch and leave
+right away.
+
+Got a whole batch? `wonder run 12 13 14` writes every spec first and asks all
+their questions in one go. Then it runs them in parallel, up to
 `max_panes` workers at once, each in its own worktree. Or run `wonder pick` and
 choose from a list:
 
@@ -209,9 +247,11 @@ ISSUE  STATION            STATUS             PR   UPDATED              NOTE
 #12    🎫 Golden Ticket    waiting_gate       #15  2026-10-30 10:20:03
 #13    ⚙️  Invention Room   paused_rate_limit  —    2026-10-30 10:21:44  resets Oct 30 15:00
 #14    🍬 Production Line  blocked            #16  2026-10-30 10:22:10  blocked: which config…
+#15    🏭 Planning Room    waiting_answers    —    2026-10-30 10:23:02
 
 $ wonder gate 12        # answer the one waiting for you
 $ wonder resume 13 14   # carry on after the limit resets / you unblocked it
+$ wonder resume 15      # answer the questions you skipped
 ```
 
 A **blocked** worker asked a question. wonder never answers it for you: it
@@ -286,9 +326,9 @@ Under ~15 verdicts the numbers are noisy, and wonder says so.
 
 | command | does |
 |---|---|
-| `wonder doctor` | checks git, gh, claude/codex, herdr, CI and config |
+| `wonder doctor` | checks git, gh, claude/codex, herdr, CI and config (`--fix` offers to install what's missing) |
 | `wonder init` | writes `wonder.toml` and prompts, updates `.gitignore` (`--commit-verdicts` keeps the log in git) |
-| `wonder run <issue>...` | runs issues through the factory |
+| `wonder run <issue>...` | runs issues through the factory (`--yes` takes the suggested answers to the spec's questions) |
 | `wonder pick` | choose open issues from a list |
 | `wonder gate [issue]` | answer runs waiting for you |
 | `wonder resume <issue>...` | continue after a stop, a usage limit or a block |

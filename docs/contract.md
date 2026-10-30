@@ -10,10 +10,19 @@ appended to the prompt. A second failure fails the station.
 
 | station | schema |
 |---|---|
-| spec | [`spec.v1.json`](../schemas/spec.v1.json): `goal`, `acceptance_criteria[]`, `assumptions[]`, `risk` (low/medium/high), `files_likely_touched[]` |
+| spec | [`spec.v1.json`](../schemas/spec.v1.json): `goal`, `acceptance_criteria[]`, `assumptions[]`, `risk` (low/medium/high), `files_likely_touched[]`, optional `questions[{question, suggested}]` (max 5) |
 | build, fix | [`worker.v1.json`](../schemas/worker.v1.json): see below |
 | review | [`review.v1.json`](../schemas/review.v1.json): `verdict` (approve/changes), `findings[{severity, area, issue}]`, `summary` |
 | replay judge | [`judge.v1.json`](../schemas/judge.v1.json): `missed` (bool), `reason` |
+
+## Questions up front
+
+The spec may return `questions`, each with a `suggested` answer. wonder writes
+every spec in the batch first, asks all the questions at once, and records each
+answer in the spec (`answer`, plus `answered_by`: `you`, or `suggested` when
+nobody was asked because of `--yes` or no terminal). Later stations get the
+spec with the answers in it. Questions left open park the run as
+`waiting_answers`; `wonder resume` asks them again.
 
 Write stations (build and fix) share this contract:
 

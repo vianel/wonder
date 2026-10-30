@@ -2,12 +2,64 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "wonder spec station output v1",
   "type": "object",
-  "required": ["goal", "acceptance_criteria", "assumptions", "risk", "files_likely_touched"],
+  "required": [
+    "goal",
+    "acceptance_criteria",
+    "assumptions",
+    "risk",
+    "files_likely_touched"
+  ],
   "properties": {
-    "goal": {"type": "string", "minLength": 1},
-    "acceptance_criteria": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-    "assumptions": {"type": "array", "items": {"type": "string"}},
-    "risk": {"enum": ["low", "medium", "high"]},
-    "files_likely_touched": {"type": "array", "items": {"type": "string"}}
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risk": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "files_likely_touched": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": [
+          "question",
+          "suggested"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "suggested": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
   }
 }

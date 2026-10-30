@@ -73,7 +73,8 @@ func (p picker) View() string {
 }
 
 func pickCmd() *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+	c := &cobra.Command{
 		Use:   "pick",
 		Short: "Choose open issues from a list and run them",
 		Args:  cobra.NoArgs,
@@ -107,7 +108,9 @@ func pickCmd() *cobra.Command {
 					nums = append(nums, i.Number)
 				}
 			}
-			return drive(a, nums, true)
+			return drive(a, nums, true, yes)
 		},
 	}
+	c.Flags().BoolVarP(&yes, "yes", "y", false, "don't ask the spec's questions; take the suggested answers")
+	return c
 }
