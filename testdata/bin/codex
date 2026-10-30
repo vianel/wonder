@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Fake codex exec: honours -C and --output-last-message.
+WORKER=codex
+last=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -C) cd "$2"; shift ;;
+    --output-last-message) last="$2"; shift ;;
+  esac
+  shift
+done
+agent_reply() { printf '%s' "$1" > "$last"; }
+source "$(dirname "$0")/_agent.sh"

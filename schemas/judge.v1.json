@@ -1,0 +1,10 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "wonder miss-judge output v1",
+  "type": "object",
+  "required": ["missed", "reason"],
+  "properties": {
+    "missed": {"type": "boolean"},
+    "reason": {"type": "string"}
+  }
+}

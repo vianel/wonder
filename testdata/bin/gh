@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Fake gh. State in $FAKE_GH_DIR. FAKE_CI is a space-separated list of check
+# results consumed one per `pr checks` call (default pass; "none" = no checks).
+d="${FAKE_GH_DIR:?}"
+echo "$*" >> "$d/calls.log"
+case "$1 $2" in
+  "issue view") printf '{"number":%s,"title":"Add greeting %s","body":"Please greet.","url":"https://github.com/o/r/issues/%s"}\n' "$3" "$3" "$3" ;;
+  "issue list") echo '[{"number":1,"title":"one","url":"u"},{"number":2,"title":"two","url":"u"}]' ;;
+  "repo view") echo '{"nameWithOwner":"o/r"}' ;;
+  "pr list")
+    if [ "$3" = "--head" ]; then
+      f="$d/pr-$(echo "$4" | tr / _)"
+      if [ -e "$f" ]; then printf '[{"number":%s,"url":"https://github.com/o/r/pull/%s"}]\n' "$(cat "$f")" "$(cat "$f")"; else echo '[]'; fi
+    else
+      cat "$d/merged.json" 2>/dev/null || echo '[]'
+    fi ;;
+  "pr create")
+    while [ $# -gt 0 ]; do [ "$1" = "--head" ] && head="$2"; shift; done
+    n=$(( $(cat "$d/prn" 2>/dev/null || echo 100) + 1 )); echo $n > "$d/prn"
+    echo $n > "$d/pr-$(echo "$head" | tr / _)"
+    echo "https://github.com/o/r/pull/$n" ;;
+  "pr checks")
+    seq=$(cat "$d/ci" 2>/dev/null || echo "${FAKE_CI:-pass}")
+    cur=${seq%% *}; rest=${seq#"$cur"}; rest=${rest# }
+    [ -n "$rest" ] && echo "$rest" > "$d/ci" || echo "$cur" > "$d/ci"
+    case "$cur" in
+      none) echo "no checks reported on the 'x' branch" >&2; exit 1 ;;
+      fail) echo '[{"name":"test","bucket":"fail","link":"https://github.com/o/r/actions/runs/123/job/9"}]'; exit 1 ;;
+      *) echo '[{"name":"test","bucket":"pass","link":"https://github.com/o/r/actions/runs/123/job/9"}]' ;;
+    esac ;;
+  "run view") echo "--- FAIL: TestGreet (0.00s)" ;;
+  "pr comment"|"pr merge") ;;
+  "pr view")
+    if [ "$5" = "mergeable" ]; then
+      # FAKE_MERGEABLE: space-separated results consumed one per call (default MERGEABLE).
+      seq=$(cat "$d/mergeable" 2>/dev/null || echo "${FAKE_MERGEABLE:-MERGEABLE}")
+      cur=${seq%% *}; rest=${seq#"$cur"}; rest=${rest# }
+      [ -n "$rest" ] && echo "$rest" > "$d/mergeable" || echo "$cur" > "$d/mergeable"
+      echo "{\"mergeable\":\"$cur\"}"; exit 0
+    fi
+    cat "$d/prview.json" 2>/dev/null || echo '{"state":"MERGED","mergedAt":"2026-01-01T00:00:00Z","mergeCommit":{"oid":"abc"}}' ;;
+  "auth status") echo "Logged in" ;;
+  *) echo "fake gh: unsupported $*" >&2; exit 2 ;;
+esac

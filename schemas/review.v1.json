@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "wonder review station output v1",
+  "type": "object",
+  "required": ["verdict", "findings", "summary"],
+  "properties": {
+    "verdict": {"enum": ["approve", "changes"]},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "area", "issue"],
+        "properties": {
+          "severity": {"enum": ["low", "medium", "high"]},
+          "area": {"type": "string"},
+          "issue": {"type": "string"}
+        }
+      }
+    },
+    "summary": {"type": "string"}
+  }
+}

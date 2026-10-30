@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fake herdr for tests. State lives in $FAKE_HERDR_DIR.
+set -e
+d="${FAKE_HERDR_DIR:?}"
+echo "$*" >> "$d/calls.log"
+case "$1 $2" in
+  "pane split")
+    n=$(( $(cat "$d/n" 2>/dev/null || echo 0) + 1 )); echo $n > "$d/n"
+    echo "w1:p$n" >> "$d/open"
+    printf '{"result":{"pane":{"pane_id":"w1:p%s"}}}\n' "$n" ;;
+  "pane rename") ;;
+  "pane run") bash -c "$4" > "$d/$3.log" 2>&1 || true ;;
+  "pane wait-output") grep -qF "$5" "$d/$3.log" ;;
+  "pane close") grep -vxF "$3" "$d/open" > "$d/open.tmp" || true; mv "$d/open.tmp" "$d/open" ;;
+  *) echo "fake herdr: unsupported $*" >&2; exit 2 ;;
+esac

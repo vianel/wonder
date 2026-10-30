@@ -1,0 +1,4 @@
+/wonder
+/dist/
+.wonder/*
+!.wonder/prompts/

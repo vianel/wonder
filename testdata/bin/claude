@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake claude -p --output-format json.
+WORKER=claude
+agent_reply() { python3 -c 'import json,sys; print(json.dumps({"type":"result","is_error":False,"result":sys.argv[1]}))' "$1"; }
+source "$(dirname "$0")/_agent.sh"
