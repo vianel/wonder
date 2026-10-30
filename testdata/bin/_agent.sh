@@ -1,4 +1,4 @@
-# Shared logic for the fake claude/codex. Reads the prompt on stdin, prints the
+# Shared logic for the fake claude/codex/copilot. Reads the prompt on stdin, prints the
 # agent's final message on stdout. Knobs (all optional):
 #   FAKE_STATE           dir for counters
 #   FAKE_REVIEW_<WORKER> review verdict for that worker (approve|changes)

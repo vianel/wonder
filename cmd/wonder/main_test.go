@@ -73,8 +73,21 @@ func TestDoctorReportsMissingTools(t *testing.T) {
 
 	pathWith(t, "git", "gh")
 	out.Reset()
-	if doctor(&out, root) || !strings.Contains(out.String(), "need at least one of claude or codex") {
+	if doctor(&out, root) || !strings.Contains(out.String(), "need at least one of claude, codex or copilot") {
 		t.Fatalf("no workers must fail:\n%s", out.String())
+	}
+
+	// AWS Copilot installs a `copilot` too; it is not a worker.
+	pathWith(t, "git", "gh", "copilot")
+	t.Setenv("FAKE_COPILOT_AWS", "1")
+	out.Reset()
+	if doctor(&out, root) || !strings.Contains(out.String(), "not GitHub Copilot CLI") {
+		t.Fatalf("AWS copilot must not count as a worker:\n%s", out.String())
+	}
+	t.Setenv("FAKE_COPILOT_AWS", "")
+	out.Reset()
+	if !doctor(&out, root) || !strings.Contains(out.String(), "✓ copilot") {
+		t.Fatalf("GitHub copilot alone should be enough:\n%s", out.String())
 	}
 }
 

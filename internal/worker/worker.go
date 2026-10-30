@@ -51,6 +51,8 @@ func Get(name string) (Worker, error) {
 		return Claude{}, nil
 	case "codex":
 		return Codex{}, nil
+	case "copilot":
+		return Copilot{}, nil
 	}
 	return nil, fmt.Errorf("unknown worker %q", name)
 }

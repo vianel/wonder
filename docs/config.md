@@ -13,7 +13,7 @@ allow_auto = false       # true: PRs that pass every rule merge without the gate
 max_diff_lines = 400
 
 [stations.spec]
-worker = "claude"        # claude | codex
+worker = "claude"        # claude | codex | copilot
 model = "sonnet"         # optional; omitted = the CLI's own default
 prompt = ".wonder/prompts/spec.md"
 
@@ -51,7 +51,8 @@ prompt = ".wonder/prompts/judges/miss.md"
 wonder records tokens, dollars and agent time for every call (see
 `wonder status`, the golden-ticket card and `wonder stats`). Claude Code reports
 its cost itself, at API prices, also on a subscription where nothing is billed
-per call. Codex reports tokens only; to see dollars for it, add your prices
+per call. Codex and Copilot report tokens only (Copilot bills premium requests,
+not tokens); to see dollars for them, add your prices
 (USD per million tokens) — wonder ships none, because prices change:
 
 ```toml
@@ -61,7 +62,8 @@ cached_input = 0.125
 output = 10.0
 ```
 
-Without it, Codex shows as "unpriced tokens".
+Without it, their calls show as "unpriced tokens". `[pricing.copilot]` works the
+same way.
 
 Prompt paths are relative to the repo root. If a prompt file is missing, wonder
 falls back to the built-in default with the same name.

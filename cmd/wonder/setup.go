@@ -19,22 +19,30 @@ import (
 )
 
 var hints = map[string]string{
-	"git":    "install git: https://git-scm.com/downloads",
-	"gh":     "install the GitHub CLI: https://cli.github.com, then `gh auth login`",
-	"claude": "install Claude Code: `curl -fsSL https://claude.ai/install.sh | bash`",
-	"codex":  "install Codex CLI: `brew install --cask codex` or `npm install -g @openai/codex`",
-	"herdr":  "optional, to watch workers in panes: https://herdr.dev",
+	"git":     "install git: https://git-scm.com/downloads",
+	"gh":      "install the GitHub CLI: https://cli.github.com, then `gh auth login`",
+	"claude":  "install Claude Code: `curl -fsSL https://claude.ai/install.sh | bash`",
+	"codex":   "install Codex CLI: `brew install --cask codex` or `npm install -g @openai/codex`",
+	"copilot": "install GitHub Copilot CLI: `npm install -g @github/copilot` (needs Copilot CLI enabled at https://github.com/settings/copilot)",
+	"herdr":   "optional, to watch workers in panes: https://herdr.dev",
 }
 
 // installedWorkers returns the worker CLIs found on PATH.
 func installedWorkers() []string {
 	var ws []string
-	for _, w := range []string{"claude", "codex"} {
-		if _, err := exec.LookPath(w); err == nil {
+	for _, w := range []string{"claude", "codex", "copilot"} {
+		if found(w) && (w != "copilot" || githubCopilot()) {
 			ws = append(ws, w)
 		}
 	}
 	return ws
+}
+
+// githubCopilot tells GitHub's Copilot CLI apart from AWS Copilot, which
+// installs a binary with the same name.
+func githubCopilot() bool {
+	out, _ := exec.Command("copilot", "--version").CombinedOutput()
+	return strings.Contains(string(out), "GitHub Copilot")
 }
 
 // doctor prints one line per check and reports whether wonder can run.
@@ -67,15 +75,18 @@ func doctor(w io.Writer, dir string) bool {
 	}
 
 	workers := installedWorkers()
-	for _, wk := range []string{"claude", "codex"} {
-		if found(wk) {
+	for _, wk := range []string{"claude", "codex", "copilot"} {
+		switch {
+		case contains(workers, wk):
 			line("✓", wk, "found")
-		} else {
+		case found(wk):
+			line("·", wk, "this `copilot` is not GitHub Copilot CLI (AWS Copilot?) — "+hints[wk])
+		default:
 			line("·", wk, "not found — "+hints[wk])
 		}
 	}
 	if len(workers) == 0 {
-		line("✗", "workers", "need at least one of claude or codex")
+		line("✗", "workers", "need at least one of claude, codex or copilot")
 		ok = false
 	}
 
@@ -233,7 +244,7 @@ func initRepo(w io.Writer, root string, force, commitVerdicts bool, inst *instal
 		workers = installedWorkers()
 	}
 	if len(workers) == 0 {
-		return errors.New("neither claude nor codex is on PATH:\n  " + hints["claude"] + "\n  " + hints["codex"])
+		return errors.New("no worker CLI on PATH; install one of them:\n  " + hints["claude"] + "\n  " + hints["codex"] + "\n  " + hints["copilot"])
 	}
 	cfgPath := filepath.Join(root, config.File)
 	if _, err := os.Stat(cfgPath); err == nil && !force {

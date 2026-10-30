@@ -23,7 +23,7 @@ internal/store/     run state and verdict log
 internal/gate/      gate TUI
 internal/eval/      replay, promote, stats, harvest
 prompts/, schemas/  embedded defaults and the public JSON schemas
-testdata/bin/       fake claude, codex, gh, herdr used by tests
+testdata/bin/       fake claude, codex, copilot, gh, herdr used by tests
 ```
 
 ## Adding a worker

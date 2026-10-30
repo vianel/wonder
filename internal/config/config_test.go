@@ -16,6 +16,13 @@ func TestDefaultSingleWorker(t *testing.T) {
 	if c.Stations.Spec.Worker.Worker != "codex" || c.Stations.Review.Workers[0].Worker != "codex" {
 		t.Fatalf("codex-only config uses claude: %+v", c.Stations)
 	}
+	c = Default([]string{"copilot"})
+	if c.Stations.Build.Worker.Worker != "copilot" || c.Stations.Spec.Worker.Worker != "copilot" || c.Stations.Review.Workers[0].Worker != "copilot" {
+		t.Fatalf("copilot-only config uses another worker: %+v", c.Stations)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestLoad(t *testing.T) {

@@ -43,3 +43,18 @@ func TestHerdrRunsInPaneAndClosesIt(t *testing.T) {
 		t.Fatalf("calls: %s", calls)
 	}
 }
+
+// The pane runs the binary wonder found, not whatever its own shell would.
+func TestHerdrUsesWondersPath(t *testing.T) {
+	bin, _ := filepath.Abs("../../testdata/bin")
+	only := t.TempDir()
+	_ = os.WriteFile(filepath.Join(only, "probe"), []byte("#!/bin/sh\necho found\n"), 0o755)
+	t.Setenv("PATH", only+string(os.PathListSeparator)+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("FAKE_HERDR_DIR", t.TempDir())
+	t.Setenv("FAKE_HERDR_PATH", "/usr/bin:/bin")
+	tmp := t.TempDir()
+	r, err := (&Herdr{}).Run(context.Background(), Job{Name: "f1-build", Argv: []string{"probe"}, Dir: tmp, Tmp: tmp})
+	if err != nil || strings.TrimSpace(string(r.Stdout)) != "found" {
+		t.Fatalf("%+v %v", r, err)
+	}
+}

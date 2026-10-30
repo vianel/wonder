@@ -61,20 +61,22 @@ func (h *Herdr) Run(ctx context.Context, j Job) (Result, error) {
 }
 
 // script tees both stdout and stderr to files and to the pane, so progress is
-// visible either way (codex --json streams its events on stdout). Plain bash
-// 3.2 syntax so it runs on stock macOS.
+// visible either way (codex --json streams its events on stdout). It runs with
+// wonder's PATH: the pane's shell may resolve a CLI to another binary (AWS
+// Copilot vs GitHub's). Plain bash 3.2 syntax so it runs on stock macOS.
 func (h *Herdr) script(j Job, marker string) string {
 	q := make([]string, len(j.Argv))
 	for i, a := range j.Argv {
 		q[i] = shq(a)
 	}
 	t := func(f string) string { return shq(filepath.Join(j.Tmp, f)) }
-	return fmt.Sprintf(`cd %s || exit 1
+	return fmt.Sprintf(`export PATH=%s
+cd %s || exit 1
 printf 'wonder: %%s\n' %s
 exec 4>&1
 { %s < %s 2>&1 1>&3 3>&- | tee %s >&4; echo "${PIPESTATUS[0]}" > %s; } 3>&1 | tee %s
 printf '\n%%s\n' %s
-`, shq(j.Dir), shq(j.Name), strings.Join(q, " "), t("prompt.txt"), t("stderr.txt"), t("exit.txt"), t("stdout.txt"), shq(marker))
+`, shq(os.Getenv("PATH")), shq(j.Dir), shq(j.Name), strings.Join(q, " "), t("prompt.txt"), t("stderr.txt"), t("exit.txt"), t("stdout.txt"), shq(marker))
 }
 
 // split opens a pane without stealing focus: the first one to the right of the

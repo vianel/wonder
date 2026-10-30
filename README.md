@@ -76,7 +76,7 @@ You need:
 
 - `git`
 - the [GitHub CLI](https://cli.github.com), logged in (`gh auth login`)
-- at least one worker: [Claude Code](https://docs.claude.com/en/docs/claude-code) or [Codex](https://github.com/openai/codex)
+- at least one worker: [Claude Code](https://docs.claude.com/en/docs/claude-code), [Codex](https://github.com/openai/codex) or [GitHub Copilot CLI](https://github.com/features/copilot/cli)
 - optional: [herdr](https://herdr.dev), to watch each worker in its own pane
 
 ```sh
@@ -107,8 +107,11 @@ claude is not installed (a worker: Claude Code).
   Log in now (claude auth login)? [y/N] y
 ```
 
-Workers use whatever login `claude` and `codex` already have, subscription or
-API key. With only one of them installed, it staffs every room.
+Workers use whatever login `claude`, `codex` and `copilot` already have,
+subscription or API key. With only one of them installed, it staffs every room.
+Copilot is opt-in when Claude or Codex is there: set `worker = "copilot"` on any
+station in `wonder.toml`. (AWS Copilot also installs a `copilot`; `wonder doctor`
+tells the two apart.)
 
 ---
 
@@ -348,7 +351,8 @@ shows the total, and `wonder stats` averages it per station:
 ```
 
 Claude Code reports its own cost (at API prices, also on a subscription).
-Codex reports tokens only; give it prices in `wonder.toml` to see dollars:
+Codex and Copilot report tokens only (Copilot bills premium requests); give
+them prices in `wonder.toml` to see dollars:
 
 ```toml
 [pricing.codex]   # USD per million tokens
@@ -363,7 +367,7 @@ output = 10.0
 
 | command | does |
 |---|---|
-| `wonder doctor` | checks git, gh, claude/codex, herdr, CI and config (`--fix` offers to install what's missing) |
+| `wonder doctor` | checks git, gh, claude/codex/copilot, herdr, CI and config (`--fix` offers to install what's missing) |
 | `wonder init` | writes `wonder.toml` and prompts, updates `.gitignore` (`--commit-verdicts` keeps the log in git) |
 | `wonder run <issue>...` | runs issues through the factory (`--yes` takes the suggested answers to the spec's questions) |
 | `wonder pick` | choose open issues from a list |

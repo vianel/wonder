@@ -77,8 +77,9 @@ type Eval struct {
 	Runs  int     `toml:"runs"`
 }
 
-// Default returns the config for the given installed workers ("claude", "codex").
-// With both installed it follows the plan's split; with one, every station uses it.
+// Default returns the config for the given installed workers ("claude", "codex",
+// "copilot"). With claude and codex it splits the work; with one worker, every
+// station uses it. Copilot is only picked when neither of the others is there.
 func Default(installed []string) Config {
 	has := map[string]bool{}
 	for _, w := range installed {
@@ -94,6 +95,9 @@ func Default(installed []string) Config {
 		writer, reviewers = claude, []Worker{reviewClaude}
 	case has["codex"] && !has["claude"]:
 		reader, reviewers = codex, []Worker{codex}
+	case has["copilot"] && !has["claude"]:
+		copilot := Worker{Worker: "copilot"}
+		writer, reader, reviewers = copilot, copilot, []Worker{copilot}
 	}
 	return Config{
 		Factory: Factory{MaxPanes: 3, BaseBranch: "main"},
@@ -126,7 +130,7 @@ func Load(root string) (*Config, error) {
 	return &c, c.Validate()
 }
 
-var knownWorkers = map[string]bool{"claude": true, "codex": true}
+var knownWorkers = map[string]bool{"claude": true, "codex": true, "copilot": true}
 
 func (c *Config) Validate() error {
 	var errs []string
@@ -141,7 +145,7 @@ func (c *Config) Validate() error {
 	}
 	check := func(name string, w Worker) {
 		if !knownWorkers[w.Worker] {
-			errs = append(errs, fmt.Sprintf("%s.worker %q is not one of claude, codex", name, w.Worker))
+			errs = append(errs, fmt.Sprintf("%s.worker %q is not one of claude, codex, copilot", name, w.Worker))
 		}
 	}
 	for name, s := range map[string]Station{"stations.spec": c.Stations.Spec, "stations.build": c.Stations.Build, "stations.fix": c.Stations.Fix, "eval.judge": c.Eval.Judge} {

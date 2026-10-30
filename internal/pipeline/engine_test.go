@@ -324,3 +324,17 @@ func TestPricingGivesCodexADollarFigure(t *testing.T) {
 		t.Fatalf("build: %+v", u)
 	}
 }
+
+func TestCopilotStaffsEveryStation(t *testing.T) {
+	en, _ := setup(t)
+	cp := config.Worker{Worker: "copilot"}
+	en.Cfg.Stations.Spec.Worker, en.Cfg.Stations.Build.Worker, en.Cfg.Stations.Fix.Worker = cp, cp, cp
+	en.Cfg.Stations.Review.Workers = []config.Worker{cp}
+	r := run(t, en, gateAlways(true, ""), 1)[0]
+	if r.Status != store.Done {
+		t.Fatalf("status %s", r.Status)
+	}
+	if u := r.Usage["build"]; u.Calls != 1 || u.UnpricedTokens != 1600 {
+		t.Fatalf("build usage: %+v", u)
+	}
+}

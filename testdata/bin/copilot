@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Fake GitHub Copilot CLI: honours -C and --usage-output-file; the reply goes
+# to stdout like `copilot -s`. FAKE_COPILOT_AWS=1 impersonates AWS Copilot.
+WORKER=copilot
+if [ "$1" = --version ]; then
+  if [ "${FAKE_COPILOT_AWS:-}" = 1 ]; then echo "copilot version: v1.34.1"; else echo "GitHub Copilot CLI 1.0.105."; fi
+  exit 0
+fi
+usage=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -C) cd "$2"; shift ;;
+    --usage-output-file) usage="$2"; shift ;;
+  esac
+  shift
+done
+# Tokens only (1500 in incl. 500 cached, 100 out), like a real usage file.
+agent_reply() {
+  echo "$1"
+  echo '{"totalPremiumRequestCost":1,"tokenDetails":{"input":{"tokenCount":1000},"cache_read":{"tokenCount":500},"cache_write":{"tokenCount":0},"output":{"tokenCount":100}}}' > "$usage"
+}
+source "$(dirname "$0")/_agent.sh"
