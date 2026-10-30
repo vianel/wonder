@@ -21,10 +21,6 @@ you say so.
 Every golden-ticket decision you make is written down. Later, when you want to
 change a recipe (a prompt), wonder taste-tests the new recipe against every
 batch you've already judged before it goes on the line.
-
-> Inspired by Arize's
-> [software factory that tests its own prompts](https://arize.com/blog/how-to-build-a-software-factory-that-tests-its-own-prompts/).
-
 ---
 
 ## 🍫 A tour of the factory
