@@ -46,7 +46,7 @@ func root() *cobra.Command {
 		SilenceErrors: false,
 	}
 	c.AddCommand(doctorCmd(), initCmd(), runCmd(), pickCmd(), resumeCmd(), gateCmd(), statusCmd(),
-		harvestCmd(), replayCmd(), promoteCmd(), statsCmd())
+		harvestCmd(), tagCmd(), replayCmd(), promoteCmd(), statsCmd())
 	return c
 }
 
@@ -386,6 +386,35 @@ func statsCmd() *cobra.Command {
 				return err
 			}
 			return a.eval().Stats()
+		},
+	}
+}
+
+func tagCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "tag [issue quality|deadline|other]",
+		Short: "Set why a past gate decision was made; with no args, list verdicts without a reason",
+		Long: "Replay and stats only grade reviewers on quality calls. Verdicts logged before\n" +
+			"wonder asked for a reason count as quality; tag deadline or other calls so they don't skew scoring.",
+		Args: func(_ *cobra.Command, args []string) error {
+			if len(args) != 0 && len(args) != 2 {
+				return errors.New("want no args, or <issue> <quality|deadline|other>")
+			}
+			return nil
+		},
+		RunE: func(_ *cobra.Command, args []string) error {
+			a, err := load()
+			if err != nil {
+				return err
+			}
+			if len(args) == 0 {
+				return a.eval().Untagged()
+			}
+			n, err := strconv.Atoi(strings.TrimPrefix(args[0], "#"))
+			if err != nil {
+				return fmt.Errorf("issue must be a number: %q", args[0])
+			}
+			return a.eval().Tag(n, args[1])
 		},
 	}
 }

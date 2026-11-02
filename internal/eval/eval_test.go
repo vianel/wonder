@@ -175,3 +175,53 @@ func TestHarvestRevertMakesMiss(t *testing.T) {
 		t.Fatal("a reverted ship counts as changes")
 	}
 }
+
+func TestScoredSkipsNonQualityCalls(t *testing.T) {
+	reverted := &store.Harvest{Reverted: true}
+	for _, c := range []struct {
+		v    store.Verdict
+		want bool
+	}{
+		{store.Verdict{}, true}, // older logs have no reason
+		{store.Verdict{GateReason: store.Quality}, true},
+		{store.Verdict{GateReason: store.Deadline}, false},
+		{store.Verdict{GateReason: store.Other}, false},
+		{store.Verdict{GateReason: store.Deadline, Harvest: reverted}, true},
+	} {
+		if got := Scored(c.v); got != c.want {
+			t.Errorf("Scored(%+v) = %v, want %v", c.v, got, c.want)
+		}
+	}
+	row, err := (&Eval{}).replayOne(context.Background(), store.Verdict{Issue: 9, GateFirst: "ship", GateReason: store.Deadline}, "", "", "", 1)
+	if err != nil || row.Skipped == "" || row.Current.Runs != 0 {
+		t.Fatalf("deadline ship must be skipped without running reviewers: %+v %v", row, err)
+	}
+}
+
+func TestTagBackfillsReason(t *testing.T) {
+	st := store.Store{Dir: t.TempDir()}
+	for i := 1; i <= 2; i++ {
+		if err := st.AppendVerdict(store.Verdict{Issue: i, GateFirst: "ship"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out bytes.Buffer
+	e := &Eval{Store: st, Out: &out}
+	if err := e.Tag(1, "mood"); err == nil {
+		t.Fatal("unknown reason must fail")
+	}
+	if err := e.Tag(7, store.Deadline); err == nil {
+		t.Fatal("missing issue must fail")
+	}
+	if err := e.Tag(1, store.Deadline); err != nil {
+		t.Fatal(err)
+	}
+	vs, _ := st.Verdicts()
+	if vs[0].GateReason != store.Deadline || vs[1].GateReason != "" || Scored(vs[0]) {
+		t.Fatalf("%+v", vs)
+	}
+	out.Reset()
+	if err := e.Untagged(); err != nil || !strings.Contains(out.String(), "#2") || strings.Contains(out.String(), "#1") {
+		t.Fatalf("untagged:\n%s %v", out.String(), err)
+	}
+}

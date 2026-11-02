@@ -73,7 +73,7 @@ func (e env) ghCalls() string {
 }
 
 func gateAlways(ship bool, notes string) GateFunc {
-	return func(*store.Run) (bool, string, bool) { return ship, notes, true }
+	return func(*store.Run) (bool, string, string, bool) { return ship, notes, "", true }
 }
 
 func run(t *testing.T, en *Engine, gate GateFunc, issues ...int) []*store.Run {
@@ -127,12 +127,12 @@ func TestCIBabysitAndGateChangesLoop(t *testing.T) {
 	en, e := setup(t)
 	t.Setenv("FAKE_CI", "fail pass")
 	calls := 0
-	gate := func(r *store.Run) (bool, string, bool) {
+	gate := func(r *store.Run) (bool, string, string, bool) {
 		calls++
 		if calls == 1 {
-			return false, "rename greet", true
+			return false, "rename greet", store.Quality, true
 		}
-		return true, "", true
+		return true, "", store.Deadline, true
 	}
 	r := run(t, en, gate, 3)[0]
 	if r.Status != store.Done || r.BabysitCount != 1 || r.GateRounds != 2 || r.GateFirst != "changes" {
@@ -143,7 +143,7 @@ func TestCIBabysitAndGateChangesLoop(t *testing.T) {
 	if got := strings.Count(string(agents), "\n"); got != 6 {
 		t.Fatalf("want 6 agent calls (spec, build, fix, 2 reviews, fix), got %d:\n%s", got, agents)
 	}
-	if vs, _ := en.Store.Verdicts(); len(vs) != 1 || vs[0].Labels["codex"] != store.Miss || vs[0].BabysitFixes != 1 {
+	if vs, _ := en.Store.Verdicts(); len(vs) != 1 || vs[0].Labels["codex"] != store.Miss || vs[0].BabysitFixes != 1 || vs[0].GateReason != store.Quality {
 		t.Fatalf("verdicts: %+v", vs)
 	}
 	if !strings.Contains(e.ghCalls(), "run view 123 --log-failed") {

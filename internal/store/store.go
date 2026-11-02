@@ -173,6 +173,7 @@ type Run struct {
 	GateRounds   int               `json:"gate_rounds"`
 	GateFirst    string            `json:"gate_first,omitempty"`
 	GateNotes    string            `json:"gate_notes,omitempty"`
+	GateReason   string            `json:"gate_reason,omitempty"` // quality | deadline | other
 	Models       map[string]string `json:"models"`
 	Prompts      map[string]string `json:"prompts"`
 	// Usage per station key ("spec", "build", "fix", "review.codex", …).
@@ -260,6 +261,7 @@ type Verdict struct {
 	HeadSHA      string            `json:"head_sha"`
 	GateFirst    string            `json:"gate_first"` // ship | changes
 	GateNotes    string            `json:"gate_notes"`
+	GateReason   string            `json:"gate_reason,omitempty"` // quality | deadline | other; empty = not asked
 	Reviews      map[string]Review `json:"reviews"`
 	Labels       map[string]string `json:"labels"` // agree | miss | false_alarm
 	Router       Route             `json:"router"`
@@ -281,6 +283,14 @@ type Harvest struct {
 	MergeSHA string    `json:"merge_sha,omitempty"`
 	Reverted bool      `json:"reverted"`
 }
+
+// Gate reasons: why the human decided. Only quality verdicts say anything
+// about the reviewers; deadline and other calls are left out of scoring.
+const (
+	Quality  = "quality"
+	Deadline = "deadline"
+	Other    = "other"
+)
 
 // Labels.
 const (

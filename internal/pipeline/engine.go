@@ -520,7 +520,7 @@ func (e *Engine) merge(ctx context.Context, r *store.Run) error {
 
 // Decide applies a human gate verdict. The first one is written to the
 // verdict log with a label per reviewer.
-func (e *Engine) Decide(r *store.Run, ship bool, notes string) error {
+func (e *Engine) Decide(r *store.Run, ship bool, notes, reason string) error {
 	if r.Status != store.WaitingGate {
 		return fmt.Errorf("#%d is not waiting on the gate (status %s)", r.Issue, r.Status)
 	}
@@ -532,7 +532,7 @@ func (e *Engine) Decide(r *store.Run, ship bool, notes string) error {
 		return errors.New("changes need notes for the fixer")
 	}
 	if r.GateRounds == 0 {
-		r.GateFirst, r.GateNotes = verdict, notes
+		r.GateFirst, r.GateNotes, r.GateReason = verdict, notes, reason
 		if err := e.Store.AppendVerdict(VerdictFor(r)); err != nil {
 			return err
 		}
@@ -553,7 +553,7 @@ func VerdictFor(r *store.Run) store.Verdict {
 	v := store.Verdict{
 		TS: time.Now().UTC(), Issue: r.Issue, PR: r.PR, Title: r.Title,
 		BaseSHA: r.BaseSHA, HeadSHA: r.HeadSHA,
-		GateFirst: r.GateFirst, GateNotes: r.GateNotes,
+		GateFirst: r.GateFirst, GateNotes: r.GateNotes, GateReason: r.GateReason,
 		Reviews: r.Reviews, Labels: map[string]string{},
 		BabysitFixes: r.BabysitCount, Models: r.Models, Prompts: r.Prompts, Usage: r.Usage,
 	}
@@ -615,7 +615,7 @@ func (e *Engine) planFirst(ctx context.Context, runs []*store.Run) error {
 
 // GateFunc asks a human about a run waiting on the gate. ok=false leaves the
 // run waiting (the human skipped or quit).
-type GateFunc func(r *store.Run) (ship bool, notes string, ok bool)
+type GateFunc func(r *store.Run) (ship bool, notes, reason string, ok bool)
 
 // RunAll advances runs in parallel (workers are capped by the runner), then
 // asks gate about each run waiting on a human, and repeats until nothing moves.
@@ -649,11 +649,11 @@ func (e *Engine) RunAll(ctx context.Context, runs []*store.Run, gate GateFunc) e
 			}
 			sort.Slice(waiting, func(i, j int) bool { return waiting[i].Issue < waiting[j].Issue })
 			for _, r := range waiting {
-				ship, notes, ok := gate(r)
+				ship, notes, reason, ok := gate(r)
 				if !ok {
 					break
 				}
-				if err := e.Decide(r, ship, notes); err != nil {
+				if err := e.Decide(r, ship, notes, reason); err != nil {
 					return err
 				}
 				moved = true

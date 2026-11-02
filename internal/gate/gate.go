@@ -282,7 +282,7 @@ func Interactive() bool {
 }
 
 // Ask asks about one run with the TUI on a terminal, a plain prompt otherwise.
-func Ask(r *store.Run) (ship bool, notes string, ok bool) {
+func Ask(r *store.Run) (ship bool, notes, reason string, ok bool) {
 	if Interactive() {
 		return TUI(r)
 	}
@@ -338,23 +338,39 @@ func AskQuestions(runs []*store.Run, sc *bufio.Scanner, out io.Writer, width int
 // in for later rounds are not lost in a discarded buffer.
 var stdin *bufio.Scanner
 
+// reasons maps the reason keys to gate reasons.
+var reasons = map[string]string{"1": store.Quality, "2": store.Deadline, "3": store.Other}
+
+const reasonHelp = "[1] code quality · [2] deadline/time · [3] something else (scope, priorities) · enter: skip"
+
 // Plain is the line-based gate: s = ship, c = changes (next line is notes),
-// anything else skips.
-func Plain(r *store.Run, sc *bufio.Scanner, out io.Writer) (bool, string, bool) {
+// anything else skips. On the first round, one more line gives the reason.
+func Plain(r *store.Run, sc *bufio.Scanner, out io.Writer) (bool, string, string, bool) {
 	fmt.Fprint(out, "\a"+Summary(r, 80)+"\nMerge this PR? [s] ship it · [c] request changes · anything else: decide later > ")
 	if !sc.Scan() {
-		return false, "", false
+		return false, "", "", false
 	}
+	ship, notes := false, ""
 	switch strings.TrimSpace(sc.Text()) {
 	case "s":
-		return true, "", true
+		ship = true
 	case "c":
 		fmt.Fprint(out, "What should change? (one line, sent to the fix agent) > ")
-		if sc.Scan() && strings.TrimSpace(sc.Text()) != "" {
-			return false, strings.TrimSpace(sc.Text()), true
+		if !sc.Scan() || strings.TrimSpace(sc.Text()) == "" {
+			return false, "", "", false
+		}
+		notes = strings.TrimSpace(sc.Text())
+	default:
+		return false, "", "", false
+	}
+	reason := ""
+	if r.GateRounds == 0 { // only the first verdict is logged
+		fmt.Fprint(out, "Why? "+reasonHelp+" > ")
+		if sc.Scan() {
+			reason = reasons[strings.TrimSpace(sc.Text())]
 		}
 	}
-	return false, "", false
+	return ship, notes, reason, true
 }
 
 type model struct {
@@ -362,6 +378,8 @@ type model struct {
 	notes   textinput.Model
 	width   int
 	writing bool
+	asking  bool // choosing the reason after a decision
+	reason  string
 	ship    bool
 	done    bool
 	quit    bool
@@ -369,7 +387,7 @@ type model struct {
 }
 
 // TUI runs the Bubble Tea gate. Keys: s ship, c changes, o open PR, d diff, q skip.
-func TUI(r *store.Run) (bool, string, bool) {
+func TUI(r *store.Run) (bool, string, string, bool) {
 	// The card is printed as plain output so it scrolls like any text even when
 	// it is taller than the terminal; Bubble Tea only draws the actions below it.
 	width := 80
@@ -380,10 +398,10 @@ func TUI(r *store.Run) (bool, string, bool) {
 	m, err := tea.NewProgram(model{run: r, notes: newInput()}).Run()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "gate:", err)
-		return false, "", false
+		return false, "", "", false
 	}
 	res := m.(model)
-	return res.ship, strings.TrimSpace(res.notes.Value()), res.done
+	return res.ship, strings.TrimSpace(res.notes.Value()), res.reason, res.done
 }
 
 func newInput() textinput.Model {
@@ -410,6 +428,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tea.KeyMsg:
+		if m.asking {
+			if r, ok := reasons[msg.String()]; ok || msg.Type == tea.KeyEnter {
+				m.reason, m.done, m.quit = r, true, true
+				return m, tea.Quit
+			}
+			switch msg.Type {
+			case tea.KeyEsc:
+				m.asking, m.ship = false, false
+			case tea.KeyCtrlC:
+				m.quit = true
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 		if m.writing {
 			switch msg.Type {
 			case tea.KeyEsc:
@@ -421,8 +453,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.msg = "notes can't be empty"
 					return m, nil
 				}
-				m.done, m.quit = true, true
-				return m, tea.Quit
+				m.writing = false
+				m.notes.Blur()
+				return m.decided()
 			}
 			var cmd tea.Cmd
 			m.notes, cmd = m.notes.Update(msg)
@@ -431,8 +464,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		pr := strconv.Itoa(m.run.PR)
 		switch msg.String() {
 		case "s":
-			m.ship, m.done, m.quit = true, true, true
-			return m, tea.Quit
+			m.ship = true
+			return m.decided()
 		case "c":
 			m.writing = true
 			return m, m.notes.Focus()
@@ -448,6 +481,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// decided asks for the reason on the first round (the only one logged) and
+// finishes straight away on later rounds.
+func (m model) decided() (tea.Model, tea.Cmd) {
+	if m.run.GateRounds == 0 {
+		m.asking = true
+		return m, nil
+	}
+	m.done, m.quit = true, true
+	return m, tea.Quit
+}
+
 func (m model) View() string {
 	r := m.run
 	// After a decision, leave one plain line in the scrollback.
@@ -461,7 +505,13 @@ func (m model) View() string {
 		return fmt.Sprintf("#%d is still waiting. Run `wonder gate %d` when you're ready.\n", r.Issue, r.Issue)
 	}
 	v := ""
-	if m.writing {
+	if m.asking {
+		v += "  " + bold.Render("Why?") + " " + dim.Render("Replays only score reviewers on quality calls.") + "\n\n"
+		v += fmt.Sprintf("   %s  Code quality — this is what I think of the code\n", key.Render("1"))
+		v += fmt.Sprintf("   %s  Deadline — a time call, not a judgment of the code\n", key.Render("2"))
+		v += fmt.Sprintf("   %s  Something else — scope, priorities, accepted risk\n", key.Render("3"))
+		v += fmt.Sprintf("   %s skip    %s back\n", key.Render("enter"), key.Render("esc"))
+	} else if m.writing {
 		v += "  " + bold.Render(fmt.Sprintf("Request changes on PR #%d", r.PR)) + "\n"
 		v += "  " + dim.Render("Tell the fix agent what to change. It gets this text as its instructions.") + "\n\n"
 		v += "  " + m.notes.View() + "\n\n"

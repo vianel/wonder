@@ -22,16 +22,16 @@ func TestMerge(t *testing.T) {
 
 func TestPlain(t *testing.T) {
 	r := &store.Run{Issue: 1}
-	if ship, _, ok := Plain(r, lines("s\n"), io.Discard); !ship || !ok {
-		t.Fatal("s should ship")
+	if ship, _, reason, ok := Plain(r, lines("s\n2\n"), io.Discard); !ship || !ok || reason != store.Deadline {
+		t.Fatalf("s should ship with a deadline reason, got %q", reason)
 	}
-	if ship, notes, ok := Plain(r, lines("c\nrename it\n"), io.Discard); ship || !ok || notes != "rename it" {
-		t.Fatalf("c: %v %q %v", ship, notes, ok)
+	if ship, notes, reason, ok := Plain(r, lines("c\nrename it\n"), io.Discard); ship || !ok || notes != "rename it" || reason != "" {
+		t.Fatalf("c: %v %q %q %v", ship, notes, reason, ok)
 	}
-	if _, _, ok := Plain(r, lines("c\n\n"), io.Discard); ok {
+	if _, _, _, ok := Plain(r, lines("c\n\n"), io.Discard); ok {
 		t.Fatal("changes without notes must not count")
 	}
-	if _, _, ok := Plain(r, lines(""), io.Discard); ok {
+	if _, _, _, ok := Plain(r, lines(""), io.Discard); ok {
 		t.Fatal("EOF skips")
 	}
 }
@@ -39,12 +39,13 @@ func TestPlain(t *testing.T) {
 func lines(s string) *bufio.Scanner { return bufio.NewScanner(strings.NewReader(s)) }
 
 func TestPlainSharesInputAcrossRounds(t *testing.T) {
-	sc := lines("c\nadd docs\ns\n")
+	sc := lines("c\nadd docs\n1\ns\n")
 	r := &store.Run{Issue: 1}
-	if ship, notes, ok := Plain(r, sc, io.Discard); ship || notes != "add docs" || !ok {
+	if ship, notes, reason, ok := Plain(r, sc, io.Discard); ship || notes != "add docs" || reason != store.Quality || !ok {
 		t.Fatal("round 1")
 	}
-	if ship, _, ok := Plain(r, sc, io.Discard); !ship || !ok {
+	r.GateRounds = 1 // later rounds don't ask for a reason
+	if ship, _, _, ok := Plain(r, sc, io.Discard); !ship || !ok {
 		t.Fatal("round 2 lost its input")
 	}
 }
@@ -54,8 +55,16 @@ func press(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: [
 func TestTUIKeys(t *testing.T) {
 	m := model{run: &store.Run{Issue: 1}}
 	got, _ := m.Update(press("s"))
-	if mm := got.(model); !mm.ship || !mm.done {
-		t.Fatal("s should ship")
+	if m = got.(model); !m.ship || m.done || !m.asking {
+		t.Fatal("s should ask why on the first round")
+	}
+	got, _ = m.Update(press("2"))
+	if m = got.(model); !m.ship || !m.done || m.reason != store.Deadline {
+		t.Fatalf("2 should ship as a deadline call: %+v", m)
+	}
+	got, _ = model{run: &store.Run{Issue: 1, GateRounds: 1}}.Update(press("s"))
+	if m = got.(model); !m.ship || !m.done {
+		t.Fatal("later rounds ship straight away")
 	}
 	m = model{run: &store.Run{Issue: 1}, notes: newInput()}
 	got, _ = m.Update(press("c"))
@@ -69,7 +78,11 @@ func TestTUIKeys(t *testing.T) {
 		m = got.(model)
 	}
 	got, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if m = got.(model); !m.done || m.ship || m.notes.Value() != "fix it" {
+	if m = got.(model); m.done || !m.asking {
+		t.Fatal("notes should lead to the reason")
+	}
+	got, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m = got.(model); !m.done || m.ship || m.reason != "" || m.notes.Value() != "fix it" {
 		t.Fatalf("changes: %+v %q", m, m.notes.Value())
 	}
 }

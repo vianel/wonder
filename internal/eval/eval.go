@@ -57,6 +57,13 @@ func Outcome(v store.Verdict) (gate, notes string) {
 	return v.GateFirst, v.GateNotes
 }
 
+// Scored reports whether a verdict says anything about the reviewers: the
+// human judged the code (or didn't say why, as in older logs), or the PR was
+// reverted, which is a quality signal whatever the reason for shipping.
+func Scored(v store.Verdict) bool {
+	return v.GateReason == "" || v.GateReason == store.Quality || (v.Harvest != nil && v.Harvest.Reverted)
+}
+
 // Score counts reviewer mistakes over all runs of one prompt.
 type Score struct {
 	Runs        int `json:"runs"`
@@ -147,6 +154,10 @@ func (e *Eval) ReplayReview(ctx context.Context, candidate string, n int) (*Resu
 func (e *Eval) replayOne(ctx context.Context, v store.Verdict, cur, cand, judge string, n int) (Row, error) {
 	gate, notes := Outcome(v)
 	row := Row{Issue: v.Issue, Gate: gate}
+	if !Scored(v) {
+		row.Skipped = "gate reason was " + v.GateReason + ", not quality"
+		return row, nil
+	}
 	if !e.haveCommit(v) {
 		row.Skipped = "head_sha not found locally or on origin"
 		return row, nil
@@ -416,6 +427,51 @@ func SetPrompt(toml, section, path string) (string, error) {
 	return "", fmt.Errorf("no prompt = \"...\" line under [%s] in %s", section, config.File)
 }
 
+// Untagged lists verdicts with no gate reason, logged before wonder asked for one.
+func (e *Eval) Untagged() error {
+	vs, err := e.Store.Verdicts()
+	if err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(e.Out, 0, 4, 2, ' ', 0)
+	n := 0
+	for _, v := range vs {
+		if v.GateReason == "" {
+			n++
+			fmt.Fprintf(tw, "#%d\t%s\t%s\t%s\t\n", v.Issue, v.TS.Format("2006-01-02"), v.GateFirst, v.Title)
+		}
+	}
+	tw.Flush()
+	if n == 0 {
+		fmt.Fprintln(e.Out, "every verdict has a reason")
+		return nil
+	}
+	fmt.Fprintf(e.Out, "\n%d untagged, scored as quality. Tag one: `wonder tag <issue> quality|deadline|other`\n", n)
+	return nil
+}
+
+// Tag sets the gate reason of an issue's verdict after the fact.
+func (e *Eval) Tag(issue int, reason string) error {
+	if reason != store.Quality && reason != store.Deadline && reason != store.Other {
+		return fmt.Errorf("reason must be quality, deadline or other, not %q", reason)
+	}
+	vs, err := e.Store.Verdicts()
+	if err != nil {
+		return err
+	}
+	for i := range vs {
+		if vs[i].Issue == issue {
+			vs[i].GateReason = reason
+			if err := e.Store.WriteVerdicts(vs); err != nil {
+				return err
+			}
+			fmt.Fprintf(e.Out, "#%d tagged %s\n", issue, reason)
+			return nil
+		}
+	}
+	return fmt.Errorf("no verdict for #%d", issue)
+}
+
 // Stats prints reviewer, router, babysit and gate stats from the verdict log.
 func (e *Eval) Stats() error {
 	vs, err := e.Store.Verdicts()
@@ -430,8 +486,17 @@ func (e *Eval) Stats() error {
 	rev := map[string]*counts{}
 	router := map[string]int{}
 	ships, fixes, maxFix := 0, 0, 0
+	unscored, untagged := 0, 0
 	for _, v := range vs {
-		for k, l := range v.Labels {
+		if v.GateReason == "" {
+			untagged++
+		}
+		labels := v.Labels
+		if !Scored(v) {
+			unscored++
+			labels = nil // a deadline or other call says nothing about the reviewers
+		}
+		for k, l := range labels {
 			c := rev[k]
 			if c == nil {
 				c = &counts{}
@@ -459,6 +524,12 @@ func (e *Eval) Stats() error {
 	}
 	pct := func(a, b int) string { return fmt.Sprintf("%3.0f%%", 100*float64(a)/float64(b)) }
 	fmt.Fprintf(e.Out, "%d verdicts, %s shipped at the first gate\n\n", len(vs), pct(ships, len(vs)))
+	if unscored > 0 {
+		fmt.Fprintf(e.Out, "%d verdict(s) were deadline or other calls, left out of reviewer rates\n\n", unscored)
+	}
+	if untagged > 0 {
+		fmt.Fprintf(e.Out, "%d verdict(s) have no reason and count as quality: `wonder tag` lists them\n\n", untagged)
+	}
 	tw := tabwriter.NewWriter(e.Out, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(tw, "reviewer\tn\tagree\tmiss\tfalse alarm\t\n")
 	keys := make([]string, 0, len(rev))

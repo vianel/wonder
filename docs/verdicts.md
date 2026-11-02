@@ -23,7 +23,7 @@ not answered yet), `paused_rate_limit`, `blocked` and `failed`.
 ```json
 {"v": 1, "ts": "2026-10-29T17:40:13Z", "issue": 42, "pr": 57, "title": "…",
  "base_sha": "…", "head_sha": "…",
- "gate_first": "ship|changes", "gate_notes": "…",
+ "gate_first": "ship|changes", "gate_notes": "…", "gate_reason": "quality|deadline|other",
  "reviews": {"codex": {"verdict": "approve", "findings": [], "summary": "…"}, "claude": {…}},
  "labels": {"codex": "agree|miss|false_alarm", "claude": "…"},
  "router": {"route": "gate", "reason": "…", "rule_overrode": false, "rules_route": "auto"},
@@ -38,6 +38,14 @@ not answered yet), `paused_rate_limit`, `blocked` and `failed`.
   reviewer approved, but the gate asked for changes, or the PR was reverted
   within 7 days (added by `wonder harvest`). `false_alarm`: the reviewer asked
   for changes, but the gate shipped.
+- **Gate reason.** Asked with one key press after the first gate decision:
+  `quality` (a judgment of the code), `deadline` (a time call) or `other`
+  (scope, priorities, accepted risk). Skipping leaves it out, as in logs from
+  before it existed, and counts as `quality`. `replay` and `stats` leave
+  `deadline` and `other` verdicts out of reviewer scoring, unless `harvest`
+  found the PR reverted. Labels are still written, so nothing is lost.
+  `wonder tag` lists verdicts with no reason; `wonder tag <issue> deadline`
+  sets one after the fact, for decisions logged before wonder asked.
 - Only the first gate verdict counts. Later rounds (changes → fix → CI → gate)
   don't go back through review, so they say nothing about the reviewers.
 - `rules_route` is where the router rules alone would send the PR, ignoring

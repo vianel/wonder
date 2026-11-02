@@ -250,7 +250,10 @@ Press `c` and tell the fixer what you want:
 
 The PR goes back down the Production Line (fix → push → CI) and returns to you.
 Reviewers don't taste it again: only your **first** decision on each PR is used
-to grade them.
+to grade them. After that first decision, one key press says why: `1` code
+quality, `2` deadline, `3` something else, or enter to skip. Deadline and other
+calls aren't used to grade the reviewers. For older decisions, `wonder tag`
+lists the ones without a reason and `wonder tag 7 deadline` sets one.
 
 ### 5. Walk away whenever you like
 
