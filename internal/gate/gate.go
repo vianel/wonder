@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,6 +60,58 @@ func Merge(reviews map[string]store.Review) (agreed, solo []Item) {
 		}
 	}
 	return agreed, solo
+}
+
+// Findings lists every finding in the order the gate card numbers them.
+func Findings(r *store.Run) []Item {
+	agreed, solo := Merge(r.Reviews)
+	return append(agreed, solo...)
+}
+
+var selection = regexp.MustCompile(`(?is)^\s*((?:all|\d+)(?:[\s,]+(?:all|\d+))*)\s*(?::\s*(.*))?$`)
+
+// Pick expands notes that start with a finding selection ("1", "1,3", "all",
+// optionally followed by ": more notes") into the findings' text, so the fixer
+// and the verdict log get the findings themselves, not card numbers. Notes that
+// aren't a selection are returned as is.
+func Pick(r *store.Run, notes string) (string, error) {
+	m := selection.FindStringSubmatch(notes)
+	if m == nil {
+		return notes, nil
+	}
+	items := Findings(r)
+	var picked []int
+	for _, t := range strings.FieldsFunc(m[1], func(c rune) bool { return c == ',' || c == ' ' || c == '\t' }) {
+		if strings.EqualFold(t, "all") {
+			picked = picked[:0]
+			for i := range items {
+				picked = append(picked, i+1)
+			}
+			break
+		}
+		n, _ := strconv.Atoi(t)
+		if n < 1 || n > len(items) {
+			return "", fmt.Errorf("there is no finding %d (the card shows %d)", n, len(items))
+		}
+		picked = append(picked, n)
+	}
+	if len(picked) == 0 {
+		return "", fmt.Errorf("there are no findings to pick")
+	}
+	var b strings.Builder
+	b.WriteString("Fix these reviewer findings:\n")
+	seen := map[int]bool{}
+	for _, n := range picked {
+		if !seen[n] {
+			seen[n] = true
+			it := items[n-1]
+			fmt.Fprintf(&b, "%d. [%s] %s — %s\n", n, it.Severity, it.Area, it.Issue)
+		}
+	}
+	if extra := strings.TrimSpace(m[2]); extra != "" {
+		b.WriteString("\n" + extra)
+	}
+	return strings.TrimSpace(b.String()), nil
 }
 
 var (
@@ -210,7 +263,7 @@ func Summary(r *store.Run, width int) string {
 		fmt.Fprintln(&b, "  "+dim.Render(hang(spentLine(r), 2, width)))
 	}
 	if r.GateRounds > 0 {
-		fmt.Fprintln(&b, "  "+hang(fmt.Sprintf("Round %d. Last time you asked: %q. The fix agent has changed the PR since; the reviews below are from round 1.", r.GateRounds+1, r.GateNotes), 2, width))
+		fmt.Fprintln(&b, "  "+hang(fmt.Sprintf("Round %d. Last time you asked: %q. The fix agent has changed the PR since; the reviews below are from round 1.", r.GateRounds+1, strings.ReplaceAll(r.GateNotes, "\n", " ")), 2, width))
 	}
 
 	if r.Spec != nil && len(r.Spec.AcceptanceCriteria) > 0 {
@@ -252,18 +305,20 @@ func Summary(r *store.Run, width int) string {
 	}
 
 	agreed, solo := Merge(r.Reviews)
+	num := 0 // numbered across both sections, as Findings and Pick count them
 	section := func(name string, items []Item) {
 		if len(items) == 0 {
 			return
 		}
 		fmt.Fprintf(&b, "\n  %s\n", bold.Render(name))
 		for _, it := range items {
+			num++
 			s, ok := sev[it.Severity]
 			if !ok {
 				s = dim
 			}
 			line := fmt.Sprintf("%s — %s %s", it.Area, it.Issue, dim.Render("("+strings.Join(it.By, ", ")+")"))
-			fmt.Fprintf(&b, "    %s %s\n", s.Render(fmt.Sprintf("%-6s", it.Severity)), hang(line, 11, width))
+			fmt.Fprintf(&b, "    %s %s %s\n", key.Render(fmt.Sprintf("%2d", num)), s.Render(fmt.Sprintf("%-6s", it.Severity)), hang(line, 14, width))
 		}
 	}
 	section("Both reviewers flagged", agreed)
@@ -355,11 +410,15 @@ func Plain(r *store.Run, sc *bufio.Scanner, out io.Writer) (bool, string, string
 	case "s":
 		ship = true
 	case "c":
-		fmt.Fprint(out, "What should change? (one line, sent to the fix agent) > ")
+		fmt.Fprint(out, "What should change? Finding numbers (1,3 or all, then \": more\" if you like) or one line for the fix agent > ")
 		if !sc.Scan() || strings.TrimSpace(sc.Text()) == "" {
 			return false, "", "", false
 		}
-		notes = strings.TrimSpace(sc.Text())
+		var err error
+		if notes, err = Pick(r, strings.TrimSpace(sc.Text())); err != nil {
+			fmt.Fprintln(out, "! "+err.Error())
+			return false, "", "", false
+		}
 	default:
 		return false, "", "", false
 	}
@@ -401,12 +460,13 @@ func TUI(r *store.Run) (bool, string, string, bool) {
 		return false, "", "", false
 	}
 	res := m.(model)
-	return res.ship, strings.TrimSpace(res.notes.Value()), res.reason, res.done
+	notes, _ := Pick(r, strings.TrimSpace(res.notes.Value())) // checked on enter
+	return res.ship, notes, res.reason, res.done
 }
 
 func newInput() textinput.Model {
 	ti := textinput.New()
-	ti.Placeholder = "e.g. also handle empty input, and add a test for it"
+	ti.Placeholder = "e.g. 1,3 · all · 1: and add a test · or describe the change"
 	ti.CharLimit = 2000
 	ti.Width = 80
 	return ti
@@ -453,6 +513,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.msg = "notes can't be empty"
 					return m, nil
 				}
+				if _, err := Pick(m.run, strings.TrimSpace(m.notes.Value())); err != nil {
+					m.msg = err.Error()
+					return m, nil
+				}
+				m.msg = ""
 				m.writing = false
 				m.notes.Blur()
 				return m.decided()
@@ -513,7 +578,8 @@ func (m model) View() string {
 		v += fmt.Sprintf("   %s skip    %s back\n", key.Render("enter"), key.Render("esc"))
 	} else if m.writing {
 		v += "  " + bold.Render(fmt.Sprintf("Request changes on PR #%d", r.PR)) + "\n"
-		v += "  " + dim.Render("Tell the fix agent what to change. It gets this text as its instructions.") + "\n\n"
+		v += "  " + dim.Render("Type finding numbers from the card (1,3 or all, then \": more notes\" if you like),") + "\n"
+		v += "  " + dim.Render("or tell the fix agent in your own words what to change.") + "\n\n"
 		v += "  " + m.notes.View() + "\n\n"
 		v += fmt.Sprintf("   %s send    %s back\n", key.Render("enter"), key.Render("esc"))
 	} else {

@@ -241,12 +241,17 @@ Press `c` and tell the fixer what you want:
 
 ```
   Request changes on PR #8
-  Tell the fix agent what to change. It gets this text as its instructions.
+  Type finding numbers from the card (1,3 or all, then ": more notes" if you like),
+  or tell the fix agent in your own words what to change.
 
   > also strip spaces and punctuation, and add a test for "A man, a plan"
 
    enter send    esc back
 ```
+
+Findings on the card are numbered. Type `1`, `1,3` or `all` to send just those
+to the fixer, or `1: and add a test` to add your own words. Wonder swaps the
+numbers for the findings' text, so the fixer and the verdict log get the real thing.
 
 The PR goes back down the Production Line (fix → push → CI) and returns to you.
 Reviewers don't taste it again: only your **first** decision on each PR is used

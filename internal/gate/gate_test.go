@@ -106,3 +106,52 @@ func TestAskQuestions(t *testing.T) {
 		t.Fatal("EOF must leave the question open")
 	}
 }
+
+func findingsRun() *store.Run {
+	return &store.Run{Issue: 1, Reviews: map[string]store.Review{
+		"claude": {Verdict: "changes", Findings: []store.Finding{{Severity: "high", Area: "index.ts", Issue: "keys collide"}}},
+		"codex":  {Verdict: "approve", Findings: []store.Finding{{Severity: "medium", Area: "a.ts", Issue: "no test"}, {Severity: "low", Area: "b.ts", Issue: "typo"}}},
+	}}
+}
+
+func TestPick(t *testing.T) {
+	r := findingsRun()
+	for _, c := range []struct{ in, want string }{
+		{"1", "Fix these reviewer findings:\n1. [high] index.ts — keys collide"},
+		{"3, 1 1", "Fix these reviewer findings:\n3. [low] b.ts — typo\n1. [high] index.ts — keys collide"},
+		{"ALL: and add a test", "Fix these reviewer findings:\n1. [high] index.ts — keys collide\n2. [medium] a.ts — no test\n3. [low] b.ts — typo\n\nand add a test"},
+		{"2 tests are failing", "2 tests are failing"}, // not a selection: free text
+		{"rename it", "rename it"},
+	} {
+		if got, err := Pick(r, c.in); err != nil || got != c.want {
+			t.Errorf("Pick(%q) = %q, %v\nwant %q", c.in, got, err, c.want)
+		}
+	}
+	if _, err := Pick(r, "4"); err == nil {
+		t.Error("out of range must fail")
+	}
+	if _, err := Pick(&store.Run{}, "all"); err == nil {
+		t.Error("all with no findings must fail")
+	}
+	if !strings.Contains(Summary(r, 100), " 3 ") {
+		t.Error("card must number findings")
+	}
+}
+
+func TestPickAtTheGate(t *testing.T) {
+	r := findingsRun()
+	if _, notes, _, ok := Plain(r, lines("c\n2\n\n"), io.Discard); !ok || !strings.Contains(notes, "a.ts — no test") {
+		t.Fatalf("plain: %q %v", notes, ok)
+	}
+	if _, _, _, ok := Plain(r, lines("c\n9\n"), io.Discard); ok {
+		t.Fatal("a bad pick must not count")
+	}
+	m := model{run: r, notes: newInput()}
+	got, _ := m.Update(press("c"))
+	m = got.(model)
+	got, _ = m.Update(press("9"))
+	got, _ = got.(model).Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m = got.(model); m.asking || m.msg == "" {
+		t.Fatal("tui must reject a bad pick")
+	}
+}
